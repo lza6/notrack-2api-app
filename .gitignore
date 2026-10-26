@@ -57,3 +57,4 @@ desktop.ini
 
 # Local Docker Compose override
 docker-compose.override.yml
+boot.log
