@@ -126,3 +126,22 @@ grep -rn "X-App" notrack-decompiled/sources/defpackage/hx.java
 ## License
 
 分析产物与文档仅供学习研究，遵循仓库根目录 LICENSE。原应用版权归其作者所有。
+
+## 完整反编译源码（`sources-full/`）
+
+`sources-full/` 包含 jadx 反编译的**全部 6862 个源文件**（4376 类），已做以下处理：
+
+- **密钥全量脱敏**：`X-App-Key` 与 2 个 Google Maps API Key 已在全部源码中替换为 `[REDACTED-*]` 占位符（覆盖 `hx.java`、`BuildConfig.java`、`ApiKeys.java`、`UDiscHelper.java` 共 4 处文件），并经 `grep` 全量复查确认零残留
+- **排除加固 VM 产物**：18 个超过 1MB 的 `pairip` 加固虚拟机反编译文件（如 `wa0.java` 17MB）无人工分析价值，已剔除，清单见 `EXCLUDED_LARGE_FILES.txt`
+- 原始 APK 文件未包含（版权物）
+
+关键入口（混淆类名）：
+
+| 文件 | 作用 |
+|------|------|
+| `defpackage/e60.java` | API 客户端主体（baseUrl=`https://notrack.ai`） |
+| `defpackage/hx.java` | OkHttp 拦截器（鉴权头注入，key 已脱敏） |
+| `defpackage/y50.java` | `/api/dispatch` 请求构造 |
+| `defpackage/g50.java` | `X-App-Sig` 签名生成（APK 证书 SHA-256） |
+| `notrack/ai/data/api/` | 全部 DTO 与 SSE 事件定义 |
+| `app/template/extension/` | 扩展系统与第三方集成 |
