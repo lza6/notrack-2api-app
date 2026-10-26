@@ -60,9 +60,9 @@ function stopBackend() {
   if (backend && backend.pid) {
     try { process.kill(backend.pid); } catch (e) { /* already gone */ }
   }
-  // 兜底：清掉残留的 duck Chrome 实例（profile 目录是本应用专属）
-  const { exec } = require('child_process');
-  exec('taskkill /F /FI "WINDOWTITLE eq duck2api*" /IM chrome.exe >nul 2>&1', () => {});
+  // 不做任何全局 chrome 清理——只杀自己 spawn 的后端，后端退出时
+  // DuckClientPool.shutdown() 按 PID 关闭自己的 Chrome 实例。
+  // （此前按标题/映像名 taskkill 会误杀用户日常浏览器，已移除。）
 }
 
 async function createWindow() {

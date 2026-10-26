@@ -12,16 +12,31 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
+
+# ---- removed-module shims (duck) ----
+import types as _duck_types
+class _DuckShim:
+    def __getattr__(self, name):
+        return lambda *a, **k: None
+    def __call__(self, *a, **k):
+        return None
+_wb_activity_shim = _DuckShim()
+class _WBActivity:
+    TASK_CHECKIN="checkin"; TASK_DAILY_CHAT="daily_chat"
+    def __getattr__(self, name):
+        return lambda *a, **k: [] if name in ("load","query","project") else None
+_wb_activity_shim = _WBActivity()
+wb_activity = _wb_activity_shim
+wb_atrest = _DuckShim()
+wb_webagent = _DuckShim()
+wb_webprompts = _duck_types.SimpleNamespace(builtin_prompts=lambda: {})
+
 from wb_fingerprint import derive_id, generate_request_id, session_id
-import wb_activity
-import wb_atrest
 import wb_catalog
 import wb_identity
 import wb_settings
 import wb_tiers
 import wb_upstream_pool
-import wb_webagent
-import wb_webprompts
 
 # ---------------------------------------------------------------------------
 # 网页版通道（issue #75 / #59 / #90）

@@ -20,6 +20,7 @@
       POST /duckchat/v1/chat (SSE)                -> 转发增量文本
 """
 import base64
+import hashlib
 import json
 import os
 import queue
@@ -155,6 +156,13 @@ class CdpPage:
         self._lock = threading.RLock()
         self._frames = queue.Queue()
         os.makedirs(user_data_dir, exist_ok=True)
+        for lock in ("SingletonLock", "SingletonSocket", "SingletonCookie"):
+            lock_path = os.path.join(user_data_dir, lock)
+            try:
+                if os.path.islink(lock_path) or os.path.exists(lock_path):
+                    os.remove(lock_path)
+            except OSError:
+                pass
         args = [
             chrome_path,
             f"--remote-debugging-port={port}",
@@ -244,8 +252,10 @@ class CdpPage:
         script = CHAT_BRIDGE.replace("__ARGS__", json.dumps({
             "vqd": vqd, "journey": journey, "responseId": response_id,
             "signals": signals, "body": body}).replace("\\", "\\\\"))
-        # 先挂 console 收集器线程
+        # 先挂统一消息收集器线程：它独占 ws.recv，把响应按 id 路由，
+        # 把 console 帧投队列。彻底避免 pump 与主线程抢 recv。
         stop = threading.Event()
+        response_box = {}
 
         def pump():
             self.ws.settimeout(0.5)
@@ -259,18 +269,37 @@ class CdpPage:
                         v = a.get("value") or ""
                         if isinstance(v, str) and v.startswith("__DUCK_FRAME__"):
                             self._frames.put(v[len("__DUCK_FRAME__"):])
-            self.ws.settimeout(30)
+                elif "id" in m and m.get("id") == eval_id["v"]:
+                    response_box["m"] = m
+                    # 不 break：后续帧仍要收，由主循环 stop 控制
 
         t = threading.Thread(target=pump, daemon=True)
+        eval_id = {"v": None}
         t.start()
         try:
-            res = self._send_long("Runtime.evaluate",
-                                  {"expression": script, "awaitPromise": True, "returnByValue": True},
-                                  timeout=600)
+            with self._lock:
+                self._id += 1
+                eid = self._id
+                eval_id["v"] = eid
+                self.ws.send(json.dumps({"id": eid, "method": "Runtime.evaluate",
+                                         "params": {"expression": script,
+                                                    "awaitPromise": True,
+                                                    "returnByValue": True}}))
+            deadline = time.time() + 600
+            while time.time() < deadline:
+                if "m" in response_box:
+                    res = response_box["m"]
+                    break
+                # 排空帧
+                while not self._frames.empty():
+                    on_frame(self._frames.get())
+                time.sleep(0.1)
+            else:
+                raise RuntimeError("chat evaluate timeout (600s)")
         finally:
             stop.set()
+            eval_id["v"] = None
             t.join(timeout=2)
-            # 排空
             while not self._frames.empty():
                 on_frame(self._frames.get())
         val = ((res.get("result") or {}).get("result") or {}).get("value")
@@ -315,7 +344,7 @@ class DuckExit:
         chrome = find_chrome()
         if not chrome:
             raise RuntimeError("Chrome not found; set DUCK_CHROME_PATH")
-        port = base_port + (hash(name) % 500)
+        port = base_port + (int(hashlib.md5(name.encode('utf-8')).hexdigest(), 16) % 400)
         self.page = CdpPage(chrome, os.path.join(
             os.path.expanduser("~"), ".duck2api", "profiles", name),
             port=port, proxy=proxy, headless=headless, log=log)
@@ -343,6 +372,7 @@ class DuckClientPool:
         self.headless = headless
         self.base_port = base_port
         self._exits = {}
+        self._registered = {}
         self._lock = threading.RLock()
         self._cond = threading.Condition(self._lock)
         self._rr = 0
@@ -354,6 +384,11 @@ class DuckClientPool:
                      "last_ok": e.last_ok, "last_err": e.last_err,
                      "alive": e.page.proc.poll() is None if e.page.proc else False}
                     for n, e in self._exits.items()]
+
+    def register_exit(self, name, proxy=None):
+        """只记配置不 spawn；首次 _pick 到它时才真正起 Chrome。"""
+        with self._lock:
+            self._registered[name] = proxy
 
     def upsert_exit(self, name, proxy=None):
         with self._lock:
@@ -384,6 +419,15 @@ class DuckClientPool:
                     if not e.busy and e.page.proc.poll() is None:
                         e.busy = True
                         return e
+                # 懒 spawn：注册了但还没起的出口，此刻起一个
+                for rname, rproxy in list(self._registered.items()):
+                    if rname not in self._exits:
+                        try:
+                            self.upsert_exit(rname, proxy=rproxy)
+                        except Exception:
+                            pass
+                        finally:
+                            self._registered.pop(rname, None)
                 alive = [e for e in self._exits.values()
                          if not e.busy and e.page.proc.poll() is None]
                 if alive:

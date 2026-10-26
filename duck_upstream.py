@@ -122,6 +122,7 @@ def init_pool(log=None, headless=None):
         headless = str(__import__("os").environ.get("DUCK_HEADLESS", "1")) == "1"
     base_port = int(__import__("os").environ.get("DUCK_CDP_BASE_PORT", "9400"))
     POOL = duck_client.DuckClientPool(log=log, headless=headless, base_port=base_port)
+    # 出口懒加载：只注册配置，首次请求到达才 spawn Chrome（启动不延迟）。
     spec = __import__("os").environ.get("DUCK_EXITS", "").strip()
     n = 0
     for part in spec.split(","):
@@ -133,22 +134,14 @@ def init_pool(log=None, headless=None):
             name, proxy = name.strip(), proxy.strip() or None
         else:
             name, proxy = part, None
-        try:
-            POOL.upsert_exit(name, proxy=proxy)
-            n += 1
-        except Exception as exc:
-            if log:
-                log("duck exit %s failed to start: %s" % (name, exc))
+        POOL.register_exit(name, proxy=proxy)
+        n += 1
     if n == 0:
-        # 默认出口：本机直连（IP 被风控时请求会 418，但服务可用、面板可管）
-        try:
-            POOL.upsert_exit("default", proxy=None)
-            n = 1
-        except Exception as exc:
-            if log:
-                log("duck default exit failed: %s" % exc)
+        POOL.register_exit("default", proxy=None)
+        n = 1
     if log:
-        log("duck upstream ready: %d exit(s), chrome=%s" % (n, duck_client.find_chrome()))
+        log("duck upstream ready: %d exit(s) (lazy start), chrome=%s"
+            % (n, duck_client.find_chrome()))
     return POOL
 
 

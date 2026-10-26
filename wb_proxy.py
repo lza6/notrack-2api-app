@@ -67,25 +67,57 @@ import urllib.error
 import urllib.request
 import uuid
 import wb_accounts
-import wb_activity
-import wb_atrest
 import wb_catalog
 import wb_egress
-import wb_ipintel
 import wb_logstore
 import wb_pricing
 import wb_settings
-import wb_webprompts
 import wb_tiers
+
+# ==================================================================
+# removed-module shims —— duck 项目用不到的功能（活动记录/桌面端密钥回收/
+# IP情报/内建提示词/模型元数据远程源/输出探针/自更新）。只保留签名兼容。
+# ==================================================================
+class _DuckShim:
+    """可调用返回 None；取属性再得一个同款。"""
+    def __getattr__(self, name):
+        return lambda *a, **k: None
+    def __call__(self, *a, **k):
+        return None
+
+import types as _duck_types
+
+def _duck_lookup(*a, **k):
+    """wb_modelsdev.lookup: 返回 (ctx, out, source)；上下文 1M 兜底。"""
+    ctx = a[1] if len(a) > 1 and a[1] else None
+    out = a[2] if len(a) > 2 and a[2] else None
+    return (ctx or 1000000), out, "shim"
+
+class _WBActivity:
+    TASK_CHECKIN="checkin"; TASK_DAILY_CHAT="daily_chat"
+    def __getattr__(self, name):
+        return lambda *a, **k: [] if name in ("load","query","project") else None
+wb_activity = _WBActivity()
+wb_atrest = _DuckShim()
+wb_ipintel = _duck_types.SimpleNamespace(
+    lookup=lambda ip: {}, empty=lambda: {},
+    FIELDS=(), slot_name=lambda *a: "")
+wb_webprompts = _duck_types.SimpleNamespace(builtin_prompts=lambda: {})
+wb_modelsdev = _duck_types.SimpleNamespace(
+    lookup=_duck_lookup, refresh_async=lambda *a, **k: None)
+wb_probes = _duck_types.SimpleNamespace(clamp_for=lambda *a, **k: None)
+wb_updates = _duck_types.SimpleNamespace(
+    configured_repository=lambda: "", UpdateChecker=lambda **k: _DuckShim())
+wb_update_request = _duck_types.SimpleNamespace(
+    status=lambda: {}, backups=lambda: {}, install_enabled=lambda: False,
+    request_install=lambda *a, **k: (_ for _ in ()).throw(RuntimeError("updates removed")),
+    apply_keep_backups=lambda stored: 0)
+
 import wb_upstream_pool
 import wb_webtools
 import wb_identity
 import wb_prompt
 import duck_upstream
-import wb_modelsdev
-import wb_probes
-import wb_updates
-import wb_update_request
 IS_WINDOWS = os.name == "nt"
 
 # ---- 一键配置客户端（wb_agents）的可用性判定（issue #246）----
@@ -6292,14 +6324,14 @@ def growth_snapshot(account):
     从"两条串起来等"变成一个来回，实测约 2 秒降到 1.5 秒以内。
     """
     if TASKS_CACHE_TTL <= 0:
-        from wb_tasks import fetch_growth_tasks, fetch_growth_summary
+        fetch_growth_tasks, fetch_growth_summary = (lambda *a, **k: {"tasks": []}), (lambda *a, **k: {})
         return _both(fetch_growth_tasks, fetch_growth_summary, account)
     now = time.time()
     with _tasks_cache_lock:
         hit = _tasks_cache.get(account.uid)
         if hit and hit[0] > now:
             return hit[1]
-    from wb_tasks import fetch_growth_tasks, fetch_growth_summary
+    fetch_growth_tasks, fetch_growth_summary = (lambda *a, **k: {"tasks": []}), (lambda *a, **k: {})
     data = _both(fetch_growth_tasks, fetch_growth_summary, account)
     with _tasks_cache_lock:
         _tasks_cache[account.uid] = (time.time() + TASKS_CACHE_TTL, data)
@@ -10250,8 +10282,7 @@ def current_account():
 def quota_scan_interval_hours():
     """The polling period the quota scanner runs on, for the panel caption."""
     try:
-        import wb_quota_scan
-        return int(getattr(wb_quota_scan, "SCAN_INTERVAL", 6 * 3600) // 3600)
+        return 0
     except Exception:
         return 6
 
@@ -22925,7 +22956,16 @@ def main():
         duck_upstream.init_pool(log=log)
     except Exception as exc:
         log("duck upstream init failed: %s" % exc)
+    atexit.register(_shutdown_duck_pool)
     _serve_forever(args)
+
+def _shutdown_duck_pool():
+    """进程退出时只关自己 spawn 的 Chrome（按 PID），绝不动用户的浏览器。"""
+    try:
+        if duck_upstream.POOL is not None:
+            duck_upstream.POOL.shutdown()
+    except Exception:
+        pass
 
 def _parse_cli_args():
     ap = argparse.ArgumentParser(description="WorkBuddy (workbuddy.ai) -> OpenAI-compatible proxy")
@@ -23070,9 +23110,11 @@ def _bootstrap_runtime(args):
     apply_daily_guards()
     load_persisted_realm()
     global SCHEDULER
-    from wb_scheduler import Scheduler
-    SCHEDULER = Scheduler(POOL)
-    SCHEDULER.start()
+    class _NoScheduler:  # duck 项目无签到/任务，调度器移除
+        def start(self): pass
+        def stop(self): pass
+        def trigger(self, *a, **k): pass
+    SCHEDULER = _NoScheduler()
     # 目录兜底：每天至少从上游 API 取一次（活跃使用的部署里 300s 缓存早就
     # 刷得更新，这个线程只兜长时间没人访问 / 一直吃缓存文件或内置快照）。
     start_catalog_daily()

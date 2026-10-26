@@ -3903,16 +3903,16 @@ button.page-nav-top:hover{background:var(--panel2);border-color:var(--accent);co
       <button class="main-nav-btn active" id="btnNavGateway" onclick="switchMainTab('gateway')">
         <span id="navGatewayLabel">网关</span>
       </button>
-      <button class="main-nav-btn" id="btnNavAccounts" onclick="switchMainTab('accounts')">
+      <button class="main-nav-btn" id="btnNavAccounts" onclick="switchMainTab('accounts')" style="display:none">
         账号
       </button>
-      <button class="main-nav-btn" id="btnNavTasks" onclick="switchMainTab('tasks')">
+      <button class="main-nav-btn" id="btnNavTasks" onclick="switchMainTab('tasks')" style="display:none">
         任务与福利
       </button>
       <button class="main-nav-btn" id="btnNavAnalytics" onclick="switchMainTab('analytics')">
         数据看板
       </button>
-      <button class="main-nav-btn" id="btnNavAgents" onclick="switchMainTab('agents')">
+      <button class="main-nav-btn" id="btnNavAgents" onclick="switchMainTab('agents')" style="display:none">
         智能体配置
       </button>
       <button class="main-nav-btn" id="btnNavSettings" onclick="switchMainTab('settings')">
@@ -4086,7 +4086,7 @@ button.page-nav-top:hover{background:var(--panel2);border-color:var(--accent);co
        一块面板（分段的样式见 .gw-summary / #schedulerBar）。 -->
   <div class="gw-summary">
     <div class="cards" id="cards"></div>
-    <div id="schedulerBar">
+    <div id="schedulerBar" style="display:none">
       <div style="display:flex;align-items:center;gap:8px">
         <span class="dot" id="schedDot"></span>
         <span>后台定时调度器: <b id="schedStatusText">运行中</b></span>
@@ -4275,7 +4275,7 @@ button.page-nav-top:hover{background:var(--panel2);border-color:var(--accent);co
   <!-- 签到与活跃记录：读 wb_activity.py 落下的结构化历史（GET /activity/history），
        一行一次真实尝试。筛选全部由服务端做（range/task/result/uid/limit），前端
        只拼查询串与渲染，免得两处各写一份筛选规则再慢慢跑偏。 -->
-  <section>
+  <section style="display:none">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px">
       <h2 style="margin:0">签到与活跃记录 <em id="activityCount"></em></h2>
       <div style="display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap">
@@ -4318,7 +4318,7 @@ button.page-nav-top:hover{background:var(--panel2);border-color:var(--accent);co
     <div style="font-size:12px;color:var(--dim);margin-top:4px">每日活跃打卡、Buddy 加油站、成长任务与福利积分总览。</div>
   </div>
   <!-- 国际版每日活跃福利 -->
-  <section id="sectionIntlTasks" style="margin-bottom:24px">
+  <section id="sectionIntlTasks" style="display:none" style="display:none" style="margin-bottom:24px">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px">
       <div>
         <h2 style="margin:0">国际版每日活跃福利</h2>
@@ -4352,7 +4352,7 @@ button.page-nav-top:hover{background:var(--panel2);border-color:var(--accent);co
   </section>
 
   <!-- 国内版专属成长任务与日常福利 -->
-  <section id="sectionGrowthTasks">
+  <section id="sectionGrowthTasks" style="display:none" style="display:none">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px">
       <div>
         <h2 style="margin:0">国内版任务与福利</h2>
