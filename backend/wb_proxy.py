@@ -18601,7 +18601,9 @@ class Handler(BaseHTTPRequestHandler):
         """True when the request carries a right key (or no key is needed)."""
         # An authenticated panel session also unlocks the management APIs,
         # so the browser never has to keep the API key in localStorage.
-        if self._panel_ok():
+        # 免密直进（本机+默认密码）不豁免 /v1 Key 校验：否则本机配置的
+        # API Key 形同虚设。只有持有效面板令牌（真实登录过的会话）才豁免。
+        if self._panel_token() and PANEL.valid(self._panel_token()):
             return True
         self.key_entry = identify_key(self._supplied_key())
         if self.key_entry:

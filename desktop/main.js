@@ -36,7 +36,7 @@ function backendUp() {
 }
 
 function startBackend() {
-  const args = [SCRIPT, '--port', String(PORT), '--panel-password', 'admin'];
+  const args = [SCRIPT, '--port', String(PORT)];  // 免密：不传 panel-password，本机直进
   backend = spawn(PY_EXE, args, {
     cwd: BACKEND_DIR,
     windowsHide: true,
