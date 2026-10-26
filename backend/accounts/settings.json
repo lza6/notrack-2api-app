@@ -1,0 +1,11 @@
+{
+  "panel_password_hash": "",
+  "panel_password_default": true,
+  "daily_chat_random": {
+    "date": "2026-10-27",
+    "times": [
+      "10:51",
+      "22:51"
+    ]
+  }
+}

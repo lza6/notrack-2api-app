@@ -1,0 +1,59 @@
+# 核心机密数据（千万不能上传到公共仓库）
+accounts/*.json
+accounts/agent-backups/
+!accounts/README.txt
+
+# 运行时日志和用量统计
+usage/*.jsonl
+usage/*.json
+usage/*.sqlite3
+usage/*.sqlite3-journal
+usage/*.sqlite3-wal
+usage/*.sqlite3-shm
+!usage/README.txt
+usage/*.bak*
+
+# 运行时模型目录落盘缓存（上游 /v3/config 成功响应的副本，重启后作兜底；删除安全）
+catalog/*.json
+catalog/*.tmp
+!catalog/README.txt
+
+# 运行时日志文件
+logs/
+
+# 测试套件输出（tests/run_all.py --logs 落盘的每个套件的完整输出）
+suite-logs/
+
+# 便携版内置运行时（仓库只保存纯源码，绿色包通过 Release 发布）
+python/
+*.zip
+
+# 发布打包产物（release 工作流与 wrt/ 脚本的输出，只该出现在 Release 资产里）
+dist/
+.sdk-cache/
+wrt/ipk/
+wrt/apk/
+# build-apk.sh 把 wb_*.py 暂存进包目录再拷给 SDK，这是构建中间产物
+wrt/openwrt/workbuddy2api/files/usr/lib/
+
+# 项目隔离测试环境
+.venv/
+.playwright-browsers/
+.test-artifacts/
+.pytest_cache/
+
+# Python 编译缓存
+__pycache__/
+*.py[cod]
+*$py.class
+
+# 系统与编辑器文件
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+.codebuddy/
+
+# Local Docker Compose override
+docker-compose.override.yml

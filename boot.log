@@ -1,0 +1,32 @@
+[wb-proxy] 00:32:47 panel      : password set from --panel-password
+[wb-proxy] 00:32:47 no accounts yet - detected 1 desktop credential(s), NOT importing
+[wb-proxy] 00:32:47   available: 6cfa8577  听风  国内版 (China)
+[wb-proxy] 00:32:47 open the dashboard and click [Scan desktop app] to import
+[wb-proxy] 00:32:47 still no accounts - starting anyway so you can log in via the dashboard
+[wb-proxy] 00:32:47 accounts   : 0 total, 0 usable
+
+  ==============================================================
+  NO ACCOUNTS YET
+
+  Open the dashboard and click [Login new account]:
+      http://127.0.0.1:8788/
+
+  The browser flow adds the account automatically.
+  This window must stay open.
+  ==============================================================
+
+[wb-proxy] 00:32:47 store      : C:\Users\Administrator.DESKTOP-EGNE9ND\Desktop\duck-2api\duck2api-hub\accounts
+[wb-proxy] 00:32:47 credential : -
+[wb-proxy] 00:32:47 catalog    : app cache not found - will use the model API instead
+[wb-proxy] 00:32:47 account    : - @ -
+[wb-proxy] 00:32:47 issuer     : -
+[wb-proxy] 00:32:47 realm      : intl (www.workbuddy.ai)
+[wb-proxy] 00:32:47 user-agent : WorkBuddy/5.8.4 workbuddy-ai/5.8.4 CLI/2.161.0
+[wb-proxy] 00:32:48 duck upstream ready: 1 exit(s), chrome=C:\Program Files\Google\Chrome\Application\chrome.exe
+[wb-proxy] 00:32:48 listening  : http://127.0.0.1:8788/v1  (api key: off)
+[wb-proxy] 00:32:48 dashboard  : http://127.0.0.1:8788/
+[wb-proxy] 00:32:59 chat: model=gpt-6-luna client_effort=None -> upstream_effort=None stream=True msgs=2 key=-
+[wb-proxy] 00:32:59 "POST /v1/chat/completions HTTP/1.1" 200 -
+[wb-proxy] 00:33:07 chat done: model=gpt-6-luna 7784ms tokens=2 (in=1 out=1)
+[wb-proxy] 00:37:51 remote catalog: no usable intl account, skipping
+[wb-proxy] 00:37:51 remote catalog: no usable cn account, skipping
