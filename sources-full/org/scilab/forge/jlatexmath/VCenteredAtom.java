@@ -1,0 +1,18 @@
+package org.scilab.forge.jlatexmath;
+
+/* JADX INFO: loaded from: classes.dex */
+public class VCenteredAtom extends Atom {
+    private final Atom atom;
+
+    public VCenteredAtom(Atom atom) {
+        this.atom = atom;
+    }
+
+    @Override // org.scilab.forge.jlatexmath.Atom
+    public Box createBox(TeXEnvironment teXEnvironment) {
+        Box boxCreateBox = this.atom.createBox(teXEnvironment);
+        float depth = boxCreateBox.getDepth() + boxCreateBox.getHeight();
+        boxCreateBox.setShift((-(depth / 2.0f)) - teXEnvironment.getTeXFont().getAxisHeight(teXEnvironment.getStyle()));
+        return new HorizontalBox(boxCreateBox);
+    }
+}
