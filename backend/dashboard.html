@@ -4149,14 +4149,14 @@ button.page-nav-top:hover{background:var(--panel2);border-color:var(--accent);co
          （window.VIEW_REALM），与网关页两张卡片的点击完全等价；改网关默认出口
          仍然是网关页那张卡片上的按钮，两者是不同的事。合并模式下账号区块搬到
          网关页，这个开关跟着搬（见 applyAccountsTabLayout），两种布局都在。 -->
-    <div id="accountsRealmSwitch" class="realm-switch" role="group" aria-label="版本视图">
+    <div id="accountsRealmSwitch" class="realm-switch" role="group" aria-label="版本视图" style="display:none">
       <button type="button" id="accountsRealmIntl" onclick="switchViewRealm('intl')" aria-pressed="false">上游</button>
       <button type="button" id="accountsRealmCn" onclick="switchViewRealm('cn')" aria-pressed="false">上游</button>
     </div>
   </div>
   <!-- 拆分模式下三个区块的落点（页头之后、原顺序）；合并模式搬走之后这里就空着 -->
   <span id="accountsHomeAnchor" hidden></span>
-  <section>
+  <section style="display:none" data-removed="accounts"
     <h2 title="多个账号按会话粘性 + 轮询使用；某个账号被上游拒绝时自动切到下一个">
       <!-- 折叠开关：真按钮，所以键盘可达；aria-expanded、chevron
            方向与正文可见性三者永远同步。标题与计数留在正文之外，收起时仍可见。 -->
@@ -4228,7 +4228,7 @@ button.page-nav-top:hover{background:var(--panel2);border-color:var(--accent);co
 
   <!-- 当前禁用总览：把散落在账号卡片上的停用/限流状态汇总成一张表。
        数据全部取自 /accounts（window.ACCOUNTS），不额外发请求。 -->
-  <section>
+  <section style="display:none" data-removed="disabled"
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px">
       <h2 style="margin:0">当前禁用<em id="disabledRealmTag" style="color:var(--dim);font-weight:500"></em><em id="disabledCount"></em></h2>
       <div class="legend" style="margin:0"><span>「上游限流」到点自动恢复；「本地停用」需手动启用；「日限额」次日零点恢复</span></div>
