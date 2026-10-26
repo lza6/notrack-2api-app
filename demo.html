@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NoTrackAI 协议验证 Demo</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Segoe UI","Microsoft YaHei",sans-serif; background:#0f1117; color:#e0e0e0;
+         min-height:100vh; display:flex; flex-direction:column; align-items:center; padding:24px 16px; }
+  .card { width:100%; max-width:860px; background:#171a23; border:1px solid #2a2f3d; border-radius:12px;
+          padding:20px; margin-bottom:16px; }
+  h1 { font-size:19px; margin-bottom:4px; }
+  .sub { color:#8a91a5; font-size:12px; margin-bottom:14px; line-height:1.6; }
+  .row { display:flex; gap:10px; align-items:center; margin-top:10px; flex-wrap:wrap; }
+  input[type=text] { flex:1; min-width:200px; background:#0f1117; color:#e0e0e0; border:1px solid #2a2f3d;
+          border-radius:8px; padding:11px 12px; font-size:14px; }
+  input[type=text]:focus { outline:none; border-color:#7a5cff; }
+  button { background:#7a5cff; color:#fff; border:none; border-radius:8px; padding:10px 24px;
+          font-size:14px; cursor:pointer; }
+  button:disabled { background:#333; cursor:wait; }
+  button.clear { background:#2a2f3d; }
+  select { background:#0f1117; color:#e0e0e0; border:1px solid #2a2f3d; border-radius:8px;
+          padding:9px; font-size:13px; }
+  .chat { max-height:480px; overflow-y:auto; }
+  .msg { padding:10px 14px; border-radius:8px; margin-bottom:10px; white-space:pre-wrap;
+         word-break:break-word; font-size:14px; line-height:1.65; }
+  .user { background:#26204d; border:1px solid #3d3466; }
+  .bot  { background:#1a231d; border:1px solid #2b3d30; }
+  .think{ background:#141821; border:1px dashed #2a2f3d; color:#8a91a5; font-size:12px; }
+  .meta { color:#6b7280; font-size:11px; margin-bottom:4px; }
+  .err  { background:#2d1618; border:1px solid #5c2327; color:#f56c6c; }
+  .cursor { display:inline-block; width:8px; height:15px; background:#7a5cff;
+            animation: blink 1s infinite; vertical-align:text-bottom; }
+  @keyframes blink { 50% { opacity:0; } }
+  .hint { color:#6b7280; font-size:12px; }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <h1>🔬 NoTrackAI /api/dispatch 协议验证 Demo</h1>
+  <div class="sub">
+    逆向自 <code>ai.notrack.app</code> v1.10.13 · POST <code>https://notrack.ai/api/dispatch</code> · SSE 流式<br>
+    事件类型: <code>chat_meta / user / thinking / delta / error</code> — 仅用于安全研究
+  </div>
+  <div class="row">
+    <select id="mode">
+      <option value="usual">mode: usual</option>
+      <option value="debate">mode: debate</option>
+    </select>
+    <select id="model">
+      <option value="C">model: C</option>
+    </select>
+  </div>
+  <div class="row">
+    <input type="text" id="input" placeholder="输入消息，回车发送…" autocomplete="off">
+    <button id="send">发送</button>
+    <button class="clear" id="clear">清空</button>
+  </div>
+  <div class="row"><span class="hint" id="status"></span></div>
+</div>
+
+<div class="card chat" id="chat">
+  <div class="msg think">还没有消息。发送一条消息来验证 dispatch SSE 协议。</div>
+</div>
+
+<script>
+const input = document.getElementById('input');
+const sendBtn = document.getElementById('send');
+const clearBtn = document.getElementById('clear');
+const chat = document.getElementById('chat');
+const statusEl = document.getElementById('status');
+const modeSel = document.getElementById('mode');
+const modelSel = document.getElementById('model');
+
+let chatId = null;
+let busy = false;
+
+function addMsg(cls, meta, text) {
+  chat.querySelector('.hint')?.remove();
+  const div = document.createElement('div');
+  div.className = 'msg ' + cls;
+  const m = document.createElement('div');
+  m.className = 'meta'; m.textContent = meta;
+  const body = document.createElement('div');
+  body.textContent = text;
+  div.appendChild(m); div.appendChild(body);
+  chat.appendChild(div); chat.scrollTop = chat.scrollHeight;
+  return body;
+}
+
+function setBusy(on) {
+  busy = on;
+  sendBtn.disabled = on;
+  sendBtn.textContent = on ? '接收中…' : '发送';
+  statusEl.textContent = on ? 'SSE 流式接收中…' : '';
+}
+
+async function send() {
+  const text = input.value.trim();
+  if (!text || busy) return;
+  addMsg('user', '你', text);
+  input.value = '';
+  setBusy(true);
+
+  const payload = { user_input: text, mode: modeSel.value, model: modelSel.value, max_turns: 1 };
+  if (chatId) payload.chat_id = chatId;
+
+  const botBody = addMsg('bot', 'NoTrackAI (speaker C) ▸ thinking…', '');
+  const cursor = document.createElement('span'); cursor.className = 'cursor';
+  botBody.appendChild(cursor);
+
+  let thinkShown = false;
+  try {
+    const resp = await fetch('/api/dispatch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split('\n');
+      buf = lines.pop();
+      for (const line of lines) {
+        if (!line.startsWith('data:')) continue;
+        let ev;
+        try { ev = JSON.parse(line.slice(5)); } catch { continue; }
+        switch (ev.type) {
+          case 'chat_meta':
+            chatId = ev.chat_id;
+            botBody.parentElement.querySelector('.meta').textContent =
+              `NoTrackAI · chat ${ev.chat_id.slice(0,8)} · mode ${ev.mode}`;
+            break;
+          case 'thinking':
+            if (!thinkShown) {
+              botBody.parentElement.querySelector('.meta').textContent += ' · 🧠 thinking';
+              thinkShown = true;
+            }
+            break;
+          case 'delta':
+            botBody.insertBefore(document.createTextNode(ev.chunk), cursor);
+            chat.scrollTop = chat.scrollHeight;
+            break;
+          case 'error':
+            botBody.classList.add('err');
+            botBody.insertBefore(document.createTextNode('❌ ' + (ev.content || JSON.stringify(ev))), cursor);
+            break;
+        }
+      }
+    }
+  } catch (e) {
+    botBody.classList.add('err');
+    botBody.insertBefore(document.createTextNode('请求失败: ' + e.message), cursor);
+  }
+  cursor.remove();
+  setBusy(false);
+  input.focus();
+}
+
+sendBtn.addEventListener('click', send);
+input.addEventListener('keydown', e => { if (e.key === 'Enter') send(); });
+clearBtn.addEventListener('click', () => { chatId = null;
+  chat.innerHTML = '<div class="msg think">已清空 (chat_id 已重置)。</div>'; });
+</script>
+</body>
+</html>

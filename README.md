@@ -145,3 +145,53 @@ grep -rn "X-App" notrack-decompiled/sources/defpackage/hx.java
 | `defpackage/g50.java` | `X-App-Sig` 签名生成（APK 证书 SHA-256） |
 | `notrack/ai/data/api/` | 全部 DTO 与 SSE 事件定义 |
 | `app/template/extension/` | 扩展系统与第三方集成 |
+
+---
+
+## 🧪 在线对话 Demo（协议验证）
+
+`demo.html` + `demo_server.py` 构成一个最小的本地验证环境，直接调用逆向出的 `/api/dispatch` SSE 协议进行真实对话。
+
+> ⚠️ **脱敏说明**：仓库中的代码**不包含** `X-App-Key` 的真实值。密钥通过环境变量 `NOTRACK_APP_KEY` 注入（可从 APK 反编译产物 `sources-full/defpackage/hx.java` 的原始文件中找到，或自行反编译 APK 获取）。
+
+### 运行
+
+```bash
+# 1. 设置密钥（Windows PowerShell）
+$env:NOTRACK_APP_KEY = "<你的 key>"
+
+# Linux / macOS
+export NOTRACK_APP_KEY="<你的 key>"
+
+# 2. 启动
+python demo_server.py
+
+# 3. 浏览器打开
+# http://localhost:8899
+```
+
+### 架构
+
+```
+浏览器 (demo.html)
+   │  POST /api/dispatch  {user_input, mode, model, max_turns}
+   ▼
+本地代理 (demo_server.py, 127.0.0.1:8899)
+   │  注入鉴权头: X-App-Key / X-App-Channel / X-App-Sig / User-Agent
+   ▼
+https://notrack.ai/api/dispatch   →  SSE 流式响应
+```
+
+> 为什么需要本地代理：上游不支持 CORS（`OPTIONS` 返回 403），浏览器无法直连；
+> 且 `User-Agent` 等请求头浏览器 JS 不允许自定义。代理同时负责密钥注入，避免密钥暴露在前端。
+
+### 验证过的协议行为
+
+| 行为 | 实测结果 |
+|------|---------|
+| 空请求 | `400` + SSE `{"type":"error","content":"user_input is required"}` |
+| 正常请求 | `200` SSE 流: `chat_meta → user → thinking → delta*` |
+| rate limit | `429` + `{"type":"error","code":"ratelimit","content":"Slow down..."}` |
+| 多轮 | 传 `chat_id` 延续会话（demo 已支持） |
+
+**仅用于安全研究与学习，请勿滥用上游服务。**
