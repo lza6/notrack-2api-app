@@ -1,0 +1,44 @@
+package defpackage;
+
+/* JADX INFO: loaded from: classes.dex */
+public final class xr4 extends sp4 {
+    private static final xr4 zzb;
+    private int zzd;
+    private int zze;
+
+    static {
+        xr4 xr4Var = new xr4();
+        zzb = xr4Var;
+        sp4.f(xr4.class, xr4Var);
+    }
+
+    public static wr4 p() {
+        return (wr4) zzb.k();
+    }
+
+    public static /* synthetic */ void q(xr4 xr4Var, int i) {
+        xr4Var.zze = i - 1;
+        xr4Var.zzd |= 1;
+    }
+
+    @Override // defpackage.sp4
+    public final Object j(int i) {
+        int i2 = i - 1;
+        if (i2 == 0) {
+            return (byte) 1;
+        }
+        if (i2 == 2) {
+            return new iq4(zzb, "\u0004\u0001\u0000\u0001\u0001\u0001\u0001\u0000\u0000\u0000\u0001᠌\u0000", new Object[]{"zzd", "zze", bp4.i});
+        }
+        if (i2 == 3) {
+            return new xr4();
+        }
+        if (i2 == 4) {
+            return new wr4(zzb);
+        }
+        if (i2 == 5) {
+            return zzb;
+        }
+        throw null;
+    }
+}

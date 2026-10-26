@@ -1,0 +1,9 @@
+services:
+  wb-proxy:
+    volumes:
+      # Linux WorkBuddy desktop login credentials, read-only for local scanning.
+      # ${HOME} must be exported by your shell (Linux/macOS) and the host path must exist.
+      - ${HOME}/.local/share/CodeBuddyExtension/Data/Public/auth:/root/.local/share/CodeBuddyExtension/Data/Public/auth:ro
+      # The gateway also probes these app names; uncomment the one your client uses.
+      # - ${HOME}/.local/share/WorkBuddy/Data/Public/auth:/root/.local/share/WorkBuddy/Data/Public/auth:ro
+      # - ${HOME}/.local/share/CodeBuddy/Data/Public/auth:/root/.local/share/CodeBuddy/Data/Public/auth:ro
