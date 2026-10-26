@@ -18715,7 +18715,17 @@ class Handler(BaseHTTPRequestHandler):
         token = (self.headers.get("X-Panel-Token") or "").strip()
         return token
     def _panel_ok(self):
-        return PANEL.valid(self._panel_token())
+        if PANEL.valid(self._panel_token()):
+            return True
+        # 免密直进：仅本机回环访问且未设置面板密码时放行（DuckFlow 默认）。
+        # 一旦设置了密码（--panel-password 或面板里改过），恢复令牌校验。
+        try:
+            peer = self.client_address[0] if self.client_address else ""
+        except Exception:
+            peer = ""
+        if peer in ("127.0.0.1", "::1") and                 wb_settings.panel_password_is_default(ACCOUNTS_DIR):
+            return True
+        return False
     @staticmethod
     def _is_panel_route(path):
         """Management endpoints shown in the web panel.
@@ -18894,7 +18904,8 @@ class Handler(BaseHTTPRequestHandler):
         # Answer without a token: the dashboard needs to know whether to
         # show the login screen before it can hold a session.
         info = {
-            "panel_password_required": True,
+            "panel_password_required": not wb_settings.panel_password_is_default(ACCOUNTS_DIR),
+            "passwordless_local": wb_settings.panel_password_is_default(ACCOUNTS_DIR),
             "panel_password_is_default": wb_settings.panel_password_is_default(ACCOUNTS_DIR),
             "authenticated": self._panel_ok(),
         }
@@ -20692,6 +20703,11 @@ class Handler(BaseHTTPRequestHandler):
                     wait_sec = int(60 - (now - attempts[0]))
                     return self._error(429, f"too many login attempts, please wait {max(1, wait_sec)}s", "rate_limit_error")
             password = str(payload.get("password") or "")
+            # 免密模式：本机回环 + 未设密码 → 任何密码值都放行
+            if payload.get("passwordless") and                     peer_ip in ("127.0.0.1", "::1") and                     wb_settings.panel_password_is_default(ACCOUNTS_DIR):
+                token = PANEL.create()
+                return self._json(200, {"ok": True, "token": token,
+                                        "passwordless": True})
             if not wb_settings.verify_panel_password(ACCOUNTS_DIR, password):
                 with _login_lock:
                     _login_attempts.setdefault(client_ip, []).append(now)
@@ -23114,6 +23130,8 @@ def _bootstrap_runtime(args):
         def start(self): pass
         def stop(self): pass
         def trigger(self, *a, **k): pass
+        def status(self, *a, **k): return {"enabled": False, "msg": "未运行（DuckFlow 无定时任务）"}
+        def running(self, *a, **k): return False
     SCHEDULER = _NoScheduler()
     # 目录兜底：每天至少从上游 API 取一次（活跃使用的部署里 300s 缓存早就
     # 刷得更新，这个线程只兜长时间没人访问 / 一直吃缓存文件或内置快照）。
