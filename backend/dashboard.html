@@ -8792,7 +8792,7 @@ function renderDisabled(){
   const rows = disabledRows();
   if(count) count.textContent = rows.length ? '(' + rows.length + ')' : '';
   if(!rows.length){
-    box.innerHTML = '<div class="legend" style="margin:0"><span>当前没有禁用的账号或模型。</span></div>';
+    box.innerHTML = '';  // duck 无账号体系，禁用概念已移除
     return;
   }
   const badge = k => k === '上游限流' ? 'warn' : (k === '本地停用' || k === '熔断' ? 'bad' : 's');
@@ -10786,6 +10786,20 @@ async function bootPanel(){
   const hint = document.getElementById('panelDefaultHint');
   if(hint && PANEL_STATUS.panel_password_is_default) hint.style.display = 'block';
   if(PANEL_STATUS.authenticated){
+    // 本机免密部署：PANEL_TOKEN 为空时先向网关换取会话令牌，
+    // 否则 startDashboard 的管理 API 全部 401 → panelSessionLost 把闸门拉回来。
+    if(!PANEL_TOKEN && PANEL_STATUS.passwordless_local){
+      try {
+        const lr = await fetch('/panel/login', {method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({passwordless:true})});
+        if(lr.ok){
+          const ld = await lr.json();
+          if(ld.token){ PANEL_TOKEN = ld.token;
+            try { sessionStorage.setItem('wb-proxy-panel-token', ld.token); } catch(e) {} }
+        }
+      } catch(e) {}
+    }
     panelHideGate();
     await startDashboard();
   } else if(PANEL_STATUS.passwordless_local){
@@ -10796,7 +10810,8 @@ async function bootPanel(){
         body: JSON.stringify({passwordless:true})});
       if(lr.ok){
         const ld = await lr.json();
-        if(ld.token){ sessionStorage.setItem('wb-proxy-panel-token', ld.token);
+        if(ld.token){ PANEL_TOKEN = ld.token;
+          try { sessionStorage.setItem('wb-proxy-panel-token', ld.token); } catch(e) {}
           document.documentElement.classList.add('wb-panel-session'); }
       }
     } catch(e) {}
