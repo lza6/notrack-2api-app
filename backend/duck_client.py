@@ -78,11 +78,22 @@ JS_BRIDGE = r"""
 """
 
 CHAT_BRIDGE = r"""
-(async (argsJson) => {
-  const args = JSON.parse(argsJson);
+(async (args) => {
   const controller = new AbortController();
   window.__duckAbort = controller;
   try {
+    // durableStream：服务端 400 强制要求。公钥必须在页面内 WebCrypto 实时生成
+    // （预置静态公钥会被 400 拒收），RSA-OAEP-256 export spki -> JWK。
+    const kp = await crypto.subtle.generateKey(
+      {name:'RSA-OAEP', modulusLength:2048, publicExponent:new Uint8Array([1,0,1]),
+       hash:'SHA-256'}, true, ['encrypt','decrypt']);
+    const pkJwk = await crypto.subtle.exportKey('jwk', kp.publicKey);
+    pkJwk.use = 'enc';
+    args.body.durableStream = {
+      messageId: crypto.randomUUID(),
+      conversationId: crypto.randomUUID(),
+      publicKey: pkJwk,
+    };
     const r = await fetch('https://duck.ai/duckchat/v1/chat', {
       method: 'POST', signal: controller.signal, credentials: 'include',
       headers: {
@@ -123,7 +134,7 @@ CHAT_BRIDGE = r"""
   } catch(e) {
     return JSON.stringify({ok:false, stage:'stream', err:String(e&&e.message||e)});
   }
-})('__ARGS__')
+})((__ARGS__))
 """
 
 
@@ -150,6 +161,8 @@ class CdpPage:
         self.chrome_path = chrome_path
         self.user_data_dir = user_data_dir
         self.port = port
+        self.proxy = proxy
+        self.headless = headless
         self.proc = None
         self.ws = None
         self._id = 0
@@ -246,12 +259,20 @@ class CdpPage:
         journey = uuid.uuid4().hex
         response_id = str(uuid.uuid4())
         signals = base64.b64encode(json.dumps({
-            "start": int(time.time() * 1000) - 6000,
-            "events": [{"name": "startNewChat_free", "delta": 5000}],
-            "end": 5800}).encode()).decode()
+            "start": int(time.time() * 1000) - 8000,
+            "events": [
+                {"name": "onboarding_impression", "delta": 170},
+                {"name": "action", "delta": 6790, "trusted": True},
+                {"name": "onboarding_finish", "delta": 7801},
+                {"name": "startNewChat_free", "delta": 7834},
+            ],
+            "end": 7839}).encode()).decode()
+        # __ARGS__ 现在是 IIFE 的对象字面量参数（bridge 已去掉 JSON.parse 层）。
+        # json.dumps 输出即合法 JS 表达式，无需任何额外转义——旧的
+        # .replace("\\","\\\\") 会把 \" 变 \\" 破坏字符串边界（FC 协议文本必炸）。
         script = CHAT_BRIDGE.replace("__ARGS__", json.dumps({
             "vqd": vqd, "journey": journey, "responseId": response_id,
-            "signals": signals, "body": body}).replace("\\", "\\\\"))
+            "signals": signals, "body": body}))
         # 先挂统一消息收集器线程：它独占 ws.recv，把响应按 id 路由，
         # 把 console 帧投队列。彻底避免 pump 与主线程抢 recv。
         stop = threading.Event()
@@ -331,7 +352,32 @@ class CdpPage:
         except Exception:
             pass
         if self.proc and self.proc.poll() is None:
-            self.proc.terminate()
+            # Windows 上 terminate 只杀父进程，Chrome 子进程会残留占着 CDP 端口，
+            # 导致同端口重建的新实例连到死端口。用 taskkill /T 整树杀 + 等端口释放。
+            import subprocess as _sp
+            try:
+                _sp.run(["taskkill", "/F", "/T", "/PID", str(self.proc.pid)],
+                        capture_output=True, timeout=10)
+            except Exception:
+                try:
+                    self.proc.terminate()
+                except Exception:
+                    pass
+            try:
+                self.proc.wait(timeout=5)
+            except Exception:
+                pass
+            # 等 CDP 端口释放（TIME_WAIT 最多几秒）
+            import socket as _socket
+            for _ in range(20):
+                s = _socket.socket()
+                try:
+                    s.bind(("127.0.0.1", self.port))
+                    s.close()
+                    break
+                except OSError:
+                    s.close()
+                    time.sleep(0.3)
 
 
 class DuckExit:
@@ -359,6 +405,32 @@ class DuckExit:
         vqd = self.page.get_vqd()
         self.page.chat_stream(vqd, body, on_frame)
         self.last_ok = time.time()
+
+    def healthy(self):
+        """CDP 页面是否还能用（进程活 + ws 连着 + 页面可执行 JS）。"""
+        if self.page.proc is None or self.page.proc.poll() is not None:
+            return False
+        if self.page.ws is None:
+            return False
+        try:
+            st = self.page._send("Runtime.evaluate",
+                                 {"expression": "1+1", "returnByValue": True})
+            return ((st.get("result") or {}).get("result") or {}).get("value") == 2
+        except Exception:
+            return False
+
+    def ensure_fresh(self):
+        """页面不健康时原地重建（保留 profile 目录 = cookie/指纹延续）。"""
+        if self.healthy():
+            return False
+        try:
+            self.page.close()
+        except Exception:
+            pass
+        self.page = CdpPage(self.page.chrome_path, self.page.user_data_dir,
+                            port=self.page.port, proxy=self.proxy,
+                            headless=self.page.headless, log=self.page.log)
+        return True
 
     def close(self):
         self.page.close()
@@ -443,9 +515,17 @@ class DuckClientPool:
         if e is None:
             raise RuntimeError("no idle duck exit available")
         try:
+            # 自愈：CDP 页面坏了（进程活但 ws 死/页面崩）先原地重建再发
+            if e.ensure_fresh():
+                self.log("exit %s: page rebuilt (was unhealthy)" % e.name)
             e.chat_stream(body, on_frame)
         except Exception as exc:
             e.last_err = str(exc)[:300]
+            # 流中断后页面通常不可再用——立刻标记重建，下次 chat 自愈
+            try:
+                e.ensure_fresh()
+            except Exception:
+                pass
             raise
         finally:
             with self._cond:

@@ -10713,6 +10713,27 @@ function panelSessionLost(){
   if(loginTimer){ clearInterval(loginTimer); loginTimer = null; }
   PANEL_TOKEN = '';
   try { sessionStorage.removeItem(PANEL_STORE); } catch(e) {}
+  // 本机免密部署：不弹登录框，自动向网关换新令牌并重启看板（对用户零感知）。
+  if(typeof PANEL_STATUS !== 'undefined' && PANEL_STATUS && PANEL_STATUS.passwordless_local
+     && typeof PANEL_STATUS.authenticated !== 'undefined'){
+    (async()=>{
+      try {
+        const lr = await fetch('/panel/login', {method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({passwordless:true})});
+        if(lr.ok){
+          const ld = await lr.json();
+          if(ld.token){ PANEL_TOKEN = ld.token;
+            try { sessionStorage.setItem('wb-proxy-panel-token', ld.token); } catch(e) {}
+            panelHideGate();
+            await startDashboard();
+            return; }
+        }
+      } catch(e) {}
+      panelNeedsLogin();
+    })();
+    return;
+  }
   const msg = document.getElementById('panelLoginMsg');
   if(msg) msg.textContent = '会话已失效，请重新输入密码';
   panelNeedsLogin();

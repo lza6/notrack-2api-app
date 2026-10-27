@@ -145,6 +145,15 @@ def init_pool(log=None, headless=None):
     return POOL
 
 
+_FC_MODE = False
+
+
+def set_fc_mode(on: bool):
+    """伪 FC 模式开关：wb_proxy 在 tools 存在时置 True（canUseTools 关闭）。"""
+    global _FC_MODE
+    _FC_MODE = bool(on)
+
+
 def build_duck_body(model, messages, stream=True):
     """OpenAI messages -> duck chat 请求体。
 
@@ -179,9 +188,19 @@ def build_duck_body(model, messages, stream=True):
     return {
         "model": model,
         "messages": duck_msgs,
-        "canUseTools": False,
+        "canUseTools": not _FC_MODE,
         "reasoningEffort": "none",
+        "canUseApproxLocation": None,
+        "canDelegateImageGeneration": None,
         "canShowGreeting": False,
+        # 服务端已强制要求 durableStream（2026-10-28 实测 400 ERR_BAD_REQUEST）。
+        # RSA-OAEP 公钥由浏览器 WebCrypto 生成（页面内注入生成），Python 侧预生成
+        # 固定密钥即可（duck 只用公钥加密下行流，私钥我们不需要——SSE 已直接回读）。
+        "durableStream": {
+            "messageId": str(__import__("uuid").uuid4()),
+            "conversationId": str(__import__("uuid").uuid4()),
+            "publicKey": None,  # 页面内 WebCrypto 实时生成填充
+        },
     }
 
 
@@ -189,6 +208,7 @@ def duck_chat_stream(model, messages, on_chunk_error=None):
     """发起 duck 流式请求，返回 DuckUpstreamAdapter。
 
     wb_proxy 的 _chat_stream_response 直接把它当 upstream 用。
+    messages 可能已含 FC 协议注入（wb_proxy 侧处理 tools）；此处原样转发。
     """
     body = build_duck_body(model, messages)
     q = queue.Queue()
