@@ -451,9 +451,15 @@ class DuckClientPool:
 
     # ---- 出口管理（面板可调用）----
     def list_exits(self):
+        try:
+            import exit_score
+            scores = {n: s["score"] for n, s in exit_score.BOARD.snapshot().items()}
+        except Exception:
+            scores = {}
         with self._lock:
             return [{"name": n, "proxy": e.proxy, "busy": e.busy,
                      "last_ok": e.last_ok, "last_err": e.last_err,
+                     "score": scores.get(n),
                      "alive": e.page.proc.poll() is None if e.page.proc else False}
                     for n, e in self._exits.items()]
 
@@ -503,7 +509,11 @@ class DuckClientPool:
                 alive = [e for e in self._exits.values()
                          if not e.busy and e.page.proc.poll() is None]
                 if alive:
-                    e = alive[self._rr % len(alive)]
+                    # B3 质量评分：按分数降序取最好者（分数相同时保持轮询公平）。
+                    import exit_score
+                    alive.sort(key=lambda e: (-exit_score.BOARD.score_of(e.name),
+                                              self._rr))
+                    e = alive[0]
                     self._rr += 1
                     e.busy = True
                     return e
@@ -514,13 +524,21 @@ class DuckClientPool:
         e = self._pick(exit_name)
         if e is None:
             raise RuntimeError("no idle duck exit available")
+        started = time.time()
         try:
             # 自愈：CDP 页面坏了（进程活但 ws 死/页面崩）先原地重建再发
             if e.ensure_fresh():
                 self.log("exit %s: page rebuilt (was unhealthy)" % e.name)
             e.chat_stream(body, on_frame)
+            import exit_score
+            exit_score.BOARD.record_success(e.name, time.time() - started)
         except Exception as exc:
             e.last_err = str(exc)[:300]
+            try:
+                import exit_score
+                exit_score.BOARD.record_failure(e.name, str(exc))
+            except Exception:
+                pass
             # 流中断后页面通常不可再用——立刻标记重建，下次 chat 自愈
             try:
                 e.ensure_fresh()

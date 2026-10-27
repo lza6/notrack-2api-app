@@ -335,9 +335,15 @@ class PureDuckPool:
 
     # -- 出口管理（面板可调用）--
     def list_exits(self):
+        try:
+            import exit_score
+            scores = {n: s['score'] for n, s in exit_score.BOARD.snapshot().items()}
+        except Exception:
+            scores = {}
         with self._lock:
             return [{'name': n, 'proxy': e['proxy'], 'busy': e['busy'],
                      'last_ok': e['last_ok'], 'last_err': e['last_err'],
+                     'score': scores.get(n),
                      'alive': True}
                     for n, e in self._exits.items()]
 
@@ -379,7 +385,11 @@ class PureDuckPool:
                         self._registered.pop(rname, None)
                 idle = [e for e in self._exits.values() if not e['busy']]
                 if idle:
-                    e = idle[self._rr % len(idle)]
+                    # B3 质量评分：按分数降序取最好者（分数相同时保持轮询公平）。
+                    import exit_score
+                    idle.sort(key=lambda e: (-exit_score.BOARD.score_of(e['name']),
+                                             self._rr))
+                    e = idle[0]
                     self._rr += 1
                     e['busy'] = True
                     return e
@@ -435,13 +445,24 @@ class PureDuckPool:
             if r2 is None or r2.status_code != 200:
                 raise RuntimeError('chat %s: %s' % (getattr(r2, 'status_code', '?'),
                                                     getattr(r2, 'text', '')[:200]))
+            started = time.time()
             for line in r2.text.split('\n'):
                 line = line.strip()
                 if line.startswith('data: '):
                     on_frame(line[6:])
             e['last_ok'] = time.time()
+            try:
+                import exit_score
+                exit_score.BOARD.record_success(e['name'], time.time() - started)
+            except Exception:
+                pass
         except Exception as exc:
             e['last_err'] = str(exc)[:300]
+            try:
+                import exit_score
+                exit_score.BOARD.record_failure(e['name'], str(exc))
+            except Exception:
+                pass
             raise
         finally:
             with self._cond:
