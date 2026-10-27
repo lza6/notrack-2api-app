@@ -20818,7 +20818,19 @@ class Handler(BaseHTTPRequestHandler):
             return self._route_duck_exit_upsert(payload)
         if path == "/accounts/duck-exit-remove":
             return self._route_duck_exit_remove(payload)
+        if path == "/accounts/duck-auto-proxy":
+            return self._route_duck_auto_proxy(payload)
         return self._error(404, "unknown account endpoint", "invalid_request_error")
+
+    def _route_duck_auto_proxy(self, payload):
+        """自动出口扩展状态 / 手动触发一轮。action: "status" | "run"。"""
+        action = str(payload.get("action") or "status").strip().lower()
+        if _AUTO_PROXY_MGR is None:
+            return self._json(200, {"ok": False, "msg": "auto proxy disabled (set DUCK_AUTO_PROXY=1)"})
+        if action == "run":
+            threading.Thread(target=_AUTO_PROXY_MGR.run_once, daemon=True).start()
+            return self._json(200, {"ok": True, "msg": "auto proxy run started"})
+        return self._json(200, {"ok": True, "snapshot": _AUTO_PROXY_MGR.snapshot()})
 
     def _route_duck_exits(self, payload):
         if duck_upstream.POOL is None:
@@ -22517,10 +22529,19 @@ class Handler(BaseHTTPRequestHandler):
                         return self._error(502, "duck upstream init failed: %s" % exc,
                                            "invalid_request_error")
                 messages = payload.get("messages") or []
+                # 伪 Function Calling：tools 存在时注入协议文本 + 转换工具轮次
+                fc_mode = bool(payload.get("tools"))
+                if fc_mode:
+                    import duck_fc
+                    messages = duck_fc.translate_tool_messages(messages)
+                    messages = duck_fc.inject_fc(messages, payload.get("tools"),
+                                                 payload.get("tool_choice"))
                 adapter = duck_upstream.duck_chat_stream(model, messages)
                 if want_stream:
-                    return self._duck_stream_response(adapter, model, fp, t_start)
-                return self._duck_nonstream_response(adapter, model, fp, t_start)
+                    return self._duck_stream_response(adapter, model, fp, t_start,
+                                                      fc_mode=fc_mode)
+                return self._duck_nonstream_response(adapter, model, fp, t_start,
+                                                     fc_mode=fc_mode)
             upstream, account, effort = open_upstream_with_fallback(
                 payload, session_key=session_key, target_realm=req_realm,
                 allow_realm_fallback=not explicit_realm,
@@ -22590,8 +22611,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._chat_nonstream_response(
                 upstream, model, fp, account, t_start, effort=effort)
 
-    def _duck_stream_response(self, upstream, model, fp, t_start):
-        """duck.ai SSE 转发（走 CDP 出口池）。"""
+    def _duck_stream_response(self, upstream, model, fp, t_start, fc_mode=False):
+        """duck.ai SSE 转发（走 CDP 出口池）。fc_mode 时缓冲解析伪 tool_calls。"""
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream; charset=utf-8")
         self.send_header("Cache-Control", "no-cache")
@@ -22603,6 +22624,10 @@ class Handler(BaseHTTPRequestHandler):
         text_parts = []
         first_ms = None
         stream_failed = False
+        fc_buf = None
+        if fc_mode:
+            import duck_fc
+            fc_buf = duck_fc.FCStreamBuffer()
         try:
             for line in iter_sse_lines(upstream, before_read=self.wfile.flush):
                 data = strip_data_prefix(line.decode("utf-8", "replace"))
@@ -22623,10 +22648,37 @@ class Handler(BaseHTTPRequestHandler):
                     if first_ms is None:
                         first_ms = int((time.time() - t_start) * 1000)
                     text_parts.append(delta["content"])
-                    out = chat_text_chunk(model, delta["content"], chunk_id=chunk_id)
-                    self.wfile.write(("data: %s\n\n" % json.dumps(out, ensure_ascii=False)).encode("utf-8"))
+                    if fc_buf is not None:
+                        # FC 模式：可能被缓冲（检测到 <tool_call>）
+                        for out_text in fc_buf.feed(delta["content"]):
+                            out = chat_text_chunk(model, out_text, chunk_id=chunk_id)
+                            self.wfile.write(("data: %s\n\n" % json.dumps(out, ensure_ascii=False)).encode("utf-8"))
+                    else:
+                        out = chat_text_chunk(model, delta["content"], chunk_id=chunk_id)
+                        self.wfile.write(("data: %s\n\n" % json.dumps(out, ensure_ascii=False)).encode("utf-8"))
             if not stream_failed:
-                out = chat_finish_chunk(model, "stop", chunk_id=chunk_id)
+                finish_reason = "stop"
+                if fc_buf is not None:
+                    import duck_fc
+                    tail_parts, tool_calls = fc_buf.finish()
+                    for out_text in tail_parts:
+                        out = chat_text_chunk(model, out_text, chunk_id=chunk_id)
+                        self.wfile.write(("data: %s\n\n" % json.dumps(out, ensure_ascii=False)).encode("utf-8"))
+                    if tool_calls:
+                        finish_reason = "tool_calls"
+                        # 补发 tool_calls delta（标准 OpenAI 流式形状）
+                        for tc in tool_calls:
+                            tc_chunk = {
+                                "id": chunk_id,
+                                "object": "chat.completion.chunk",
+                                "created": int(time.time()),
+                                "model": model,
+                                "choices": [{"index": 0, "delta": {
+                                    "tool_calls": [dict(tc, index=0)]},
+                                    "finish_reason": None}],
+                            }
+                            self.wfile.write(("data: %s\n\n" % json.dumps(tc_chunk, ensure_ascii=False)).encode("utf-8"))
+                out = chat_finish_chunk(model, finish_reason, chunk_id=chunk_id)
                 self.wfile.write(("data: %s\n\n" % json.dumps(out)).encode("utf-8"))
                 self.wfile.write(b"data: [DONE]\n\n")
                 self.wfile.flush()
@@ -22639,12 +22691,23 @@ class Handler(BaseHTTPRequestHandler):
                          stream=True, elapsed_ms=int((time.time() - t_start) * 1000),
                          ttft_ms=first_ms, fp=fp)
 
-    def _duck_nonstream_response(self, upstream, model, fp, t_start):
-        """duck.ai 非流式：复用 aggregate_stream 聚合。"""
+    def _duck_nonstream_response(self, upstream, model, fp, t_start, fc_mode=False):
+        """duck.ai 非流式：复用 aggregate_stream 聚合。fc_mode 时解析伪 tool_calls。"""
         try:
             chat_obj = aggregate_stream(upstream, model, None)
         finally:
             upstream.close()
+        if fc_mode:
+            import duck_fc
+            msg = ((chat_obj.get("choices") or [{}])[0].get("message") or {})
+            content, tool_calls = duck_fc.parse_fc_response(str(msg.get("content") or ""))
+            if tool_calls:
+                msg["content"] = content
+                msg["tool_calls"] = tool_calls
+                msg.pop("function_call", None)
+                ((chat_obj.get("choices") or [{}])[0])["finish_reason"] = "tool_calls"
+            elif content is not None:
+                msg["content"] = content
         usage = chat_obj.get("usage") or {
             "prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}
         record_usage(model, usage, stream=False,
@@ -22974,11 +23037,28 @@ def main():
         duck_upstream.init_pool(log=log)
     except Exception as exc:
         log("duck upstream init failed: %s" % exc)
+    # 自动出口扩展（免费代理源 + 订阅节点 -> 验证 -> 注册）；DUCK_AUTO_PROXY=1 开启
+    global _AUTO_PROXY_MGR
+    if str(os.environ.get("DUCK_AUTO_PROXY", "0")) == "1":
+        try:
+            import proxy_pool_ext
+            _AUTO_PROXY_MGR = proxy_pool_ext.AutoProxyManager(duck_upstream.POOL, log=log)
+            _AUTO_PROXY_MGR.start()
+            log("duck auto proxy manager enabled")
+        except Exception as exc:
+            log("auto proxy manager init failed: %s" % exc)
     atexit.register(_shutdown_duck_pool)
     _serve_forever(args)
 
+_AUTO_PROXY_MGR = None
+
 def _shutdown_duck_pool():
     """进程退出时只关自己 spawn 的 Chrome（按 PID），绝不动用户的浏览器。"""
+    try:
+        if _AUTO_PROXY_MGR is not None:
+            _AUTO_PROXY_MGR.stop()
+    except Exception:
+        pass
     try:
         if duck_upstream.POOL is not None:
             duck_upstream.POOL.shutdown()

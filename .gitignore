@@ -11,3 +11,15 @@ probe.log
 __pycache__/
 legacy/
 .agent/memory/*.log
+
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+/graft/
+
+# mihomo 内核与运行态（首次启用自动下载）
+tools/mihomo/mihomo.exe
+tools/mihomo/mihomo.zip
+tools/mihomo/config*.yaml
+tools/mihomo/dbg*.log
+tools/mihomo/runner_pid.txt
+tools/mihomo/alive_nodes.json
+tools/mihomo/auto_exits_state.json

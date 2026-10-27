@@ -179,8 +179,10 @@ def build_duck_body(model, messages, stream=True):
     return {
         "model": model,
         "messages": duck_msgs,
-        "canUseTools": False,
+        "canUseTools": True,
         "reasoningEffort": "none",
+        "canUseApproxLocation": None,
+        "canDelegateImageGeneration": None,
         "canShowGreeting": False,
     }
 
@@ -189,6 +191,7 @@ def duck_chat_stream(model, messages, on_chunk_error=None):
     """发起 duck 流式请求，返回 DuckUpstreamAdapter。
 
     wb_proxy 的 _chat_stream_response 直接把它当 upstream 用。
+    messages 可能已含 FC 协议注入（wb_proxy 侧处理 tools）；此处原样转发。
     """
     body = build_duck_body(model, messages)
     q = queue.Queue()
