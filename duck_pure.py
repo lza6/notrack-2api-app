@@ -71,6 +71,13 @@ _JWK_LOCK = threading.Lock()
 _JWK: dict | None = None
 
 
+def _normalize_proxy(url: str | None) -> str | None:
+    """socks5:// → socks5h://（curl 远端解析 DNS，防 DNS 泄漏 + 兼容 xray）。"""
+    if url and url.startswith('socks5://'):
+        return 'socks5h://' + url[len('socks5://'):]
+    return url
+
+
 def _public_jwk() -> dict:
     global _JWK
     with _JWK_LOCK:
@@ -333,7 +340,8 @@ class PureDuckPool:
                             'last_ok': 0.0, 'last_err': '',
                             'session': creq.Session(
                                 impersonate=IMPERSONATE,
-                                proxies={'http': rproxy, 'https': rproxy} if rproxy else None,
+                                proxies=({'http': _normalize_proxy(rproxy),
+                                          'https': _normalize_proxy(rproxy)} if rproxy else None),
                                 timeout=60),
                         }
                         self._registered.pop(rname, None)
@@ -411,6 +419,120 @@ class PureDuckPool:
     def shutdown(self):
         with self._lock:
             self._exits.clear()
+
+
+# ── wb_proxy 集成接口（与 duck_upstream 同款形状） ─────────────────────
+
+POOL = None
+
+
+def init_pool(log=None, headless=None):
+    global POOL
+    if POOL is not None:
+        return POOL
+    POOL = PureDuckPool(log=log)
+    # 出口来源：DUCK_EXITS 环境变量（与 CDP 通道同格式）
+    spec = os.environ.get("DUCK_EXITS", "").strip()
+    n = 0
+    for part in spec.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if "=" in part:
+            name, proxy = part.split("=", 1)
+            name, proxy = name.strip(), (proxy.strip() or None)
+        else:
+            name, proxy = part, None
+        POOL.register_exit(name, proxy=proxy)
+        n += 1
+    if n == 0:
+        POOL.register_exit("direct", proxy=None)
+        n = 1
+    if log:
+        log("duck pure ready: %d exit(s) (zero-browser, curl_cffi+node)" % n)
+    return POOL
+
+
+def duck_chat_stream(model, messages, on_chunk_error=None):
+    """发起纯协议 duck 流式请求，返回 PureUpstreamAdapter（wb_proxy 直接当 upstream 用）。"""
+    body = build_duck_body(model, messages)
+    q = queue.Queue()
+    adapter = PureUpstreamAdapter(model, q)
+    got_first = threading.Event()
+
+    def on_frame(data_line):
+        q.put(data_line)
+        if not got_first.is_set():
+            got_first.set()
+
+    def run():
+        try:
+            if POOL is None:
+                init_pool()
+            e = POOL._pick()
+            if e is None:
+                raise RuntimeError("no idle duck exit available")
+            try:
+                r1 = e['session'].get(_STATUS_URL,
+                                      headers={'Cache-Control': 'no-store',
+                                               'x-vqd-accept': '1',
+                                               'Referer': 'https://duck.ai/'})
+                vqd64 = r1.headers.get('x-vqd-hash-1') or ''
+                if r1.status_code != 200 or not vqd64:
+                    raise RuntimeError('status %s' % r1.status_code)
+                vqd = _node_answer(base64.b64decode(vqd64).decode('utf-8'))
+                headers = {
+                    'Content-Type': 'application/json',
+                    'Accept': 'text/event-stream',
+                    'x-vqd-hash-1': vqd,
+                    'x-ddg-journey-id': uuid.uuid4().hex,
+                    'x-duckai-consent-purposes': 'user-location,image-generation,web-search',
+                    'x-duckai-continuation': 'resubmit-context',
+                    'x-duckai-response-id': str(uuid.uuid4()),
+                    'x-duckai-tool-approval': 'web-search',
+                    'x-fe-version': _FE_VERSION_PREFIX + '-dev'[:64],
+                    'x-fe-signals': _fe_signals(),
+                    'Referer': 'https://duck.ai/',
+                    'Origin': 'https://duck.ai',
+                }
+                # 挑战变体重试
+                r2 = None
+                for attempt in range(int(os.environ.get('DUCK_PURE_RETRIES', '4'))):
+                    r2 = e['session'].post(_CHAT_URL, json=body, headers=headers)
+                    if r2.status_code == 200 or 'ERR_CHALLENGE' not in r2.text:
+                        break
+                    time.sleep(0.3)
+                    r1 = e['session'].get(_STATUS_URL,
+                                          headers={'Cache-Control': 'no-store',
+                                                   'x-vqd-accept': '1',
+                                                   'Referer': 'https://duck.ai/'})
+                    vqd64 = r1.headers.get('x-vqd-hash-1') or ''
+                    if not vqd64:
+                        break
+                    headers['x-vqd-hash-1'] = _node_answer(
+                        base64.b64decode(vqd64).decode('utf-8'))
+                if r2 is None or r2.status_code != 200:
+                    raise RuntimeError('chat %s: %s' % (getattr(r2, 'status_code', '?'),
+                                                        getattr(r2, 'text', '')[:200]))
+                for line in r2.text.split(chr(10)):
+                    line = line.strip()
+                    if line.startswith('data: '):
+                        on_frame(line[6:])
+                e['last_ok'] = time.time()
+            except Exception as exc:
+                e['last_err'] = str(exc)[:300]
+                raise
+            finally:
+                with POOL._cond:
+                    e['busy'] = False
+                    POOL._cond.notify_all()
+        except Exception as exc:
+            q.put(json.dumps({'action': 'error', 'message': str(exc)[:300]}))
+        finally:
+            q.put(None)
+
+    threading.Thread(target=run, daemon=True).start()
+    return adapter
 
 
 if __name__ == '__main__':

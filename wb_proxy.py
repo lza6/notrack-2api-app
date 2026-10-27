@@ -22520,14 +22520,8 @@ class Handler(BaseHTTPRequestHandler):
             key_blocked = self._key_model_error(payload.get("model"))
             if key_blocked:
                 return self._error(400, key_blocked, "invalid_request_error")
-            # ---- duck.ai 上游分流：DUCK_MODELS 内的模型走 CDP Chrome 出口池 ----
+            # ---- duck.ai 上游分流：DUCK_MODELS 内的模型走 duck 通道 ----
             if model in duck_upstream.duck_client.DUCK_MODEL_IDS:
-                if duck_upstream.POOL is None:
-                    try:
-                        duck_upstream.init_pool(log=log)
-                    except Exception as exc:
-                        return self._error(502, "duck upstream init failed: %s" % exc,
-                                           "invalid_request_error")
                 messages = payload.get("messages") or []
                 # 伪 Function Calling：tools 存在时注入协议文本 + 转换工具轮次
                 fc_mode = bool(payload.get("tools"))
@@ -22540,8 +22534,26 @@ class Handler(BaseHTTPRequestHandler):
                 # <tool_call> 会被 duck 当搜索意图吞进 continuation 流
                 if fc_mode:
                     duck_upstream.set_fc_mode(True)
-                adapter = duck_upstream.duck_chat_stream(model, messages)
-                duck_upstream.set_fc_mode(False)
+                # 通道选择：DUCK_PURE=1（默认）走纯协议（curl_cffi+Node 沙箱，
+                # 零浏览器，~1s/请求）；DUCK_PURE=0 走 CDP Chrome 出口池（兜底）
+                use_pure = str(os.environ.get("DUCK_PURE", "1")) == "1"
+                try:
+                    if use_pure:
+                        import duck_pure
+                        if duck_pure.POOL is None:
+                            duck_pure.init_pool(log=log)
+                        adapter = duck_pure.duck_chat_stream(model, messages)
+                    else:
+                        if duck_upstream.POOL is None:
+                            try:
+                                duck_upstream.init_pool(log=log)
+                            except Exception as exc:
+                                return self._error(502, "duck upstream init failed: %s" % exc,
+                                                   "invalid_request_error")
+                        adapter = duck_upstream.duck_chat_stream(model, messages)
+                finally:
+                    if fc_mode:
+                        duck_upstream.set_fc_mode(False)
                 if want_stream:
                     return self._duck_stream_response(adapter, model, fp, t_start,
                                                       fc_mode=fc_mode)
@@ -22656,19 +22668,19 @@ class Handler(BaseHTTPRequestHandler):
                     if fc_buf is not None:
                         # FC 模式：可能被缓冲（检测到 <tool_call>）
                         for out_text in fc_buf.feed(delta["content"]):
-                            out = chat_text_chunk(model, out_text, chunk_id=chunk_id)
-                            self.wfile.write(("data: %s\n\n" % json.dumps(out, ensure_ascii=False)).encode("utf-8"))
+                            self.wfile.write(("data: %s\n\n" % chat_text_chunk(
+                                model, out_text, chunk_id=chunk_id)).encode("utf-8"))
                     else:
-                        out = chat_text_chunk(model, delta["content"], chunk_id=chunk_id)
-                        self.wfile.write(("data: %s\n\n" % json.dumps(out, ensure_ascii=False)).encode("utf-8"))
+                        self.wfile.write(("data: %s\n\n" % chat_text_chunk(
+                            model, delta["content"], chunk_id=chunk_id)).encode("utf-8"))
             if not stream_failed:
                 finish_reason = "stop"
                 if fc_buf is not None:
                     import duck_fc
                     tail_parts, tool_calls = fc_buf.finish()
                     for out_text in tail_parts:
-                        out = chat_text_chunk(model, out_text, chunk_id=chunk_id)
-                        self.wfile.write(("data: %s\n\n" % json.dumps(out, ensure_ascii=False)).encode("utf-8"))
+                        self.wfile.write(("data: %s\n\n" % chat_text_chunk(
+                            model, out_text, chunk_id=chunk_id)).encode("utf-8"))
                     if tool_calls:
                         finish_reason = "tool_calls"
                         # 补发 tool_calls delta（标准 OpenAI 流式形状）
@@ -22683,8 +22695,8 @@ class Handler(BaseHTTPRequestHandler):
                                     "finish_reason": None}],
                             }
                             self.wfile.write(("data: %s\n\n" % json.dumps(tc_chunk, ensure_ascii=False)).encode("utf-8"))
-                out = chat_finish_chunk(model, finish_reason, chunk_id=chunk_id)
-                self.wfile.write(("data: %s\n\n" % json.dumps(out)).encode("utf-8"))
+                self.wfile.write(("data: %s\n\n" % chat_finish_chunk(
+                    model, finish_reason, chunk_id=chunk_id)).encode("utf-8"))
                 self.wfile.write(b"data: [DONE]\n\n")
                 self.wfile.flush()
         finally:

@@ -55,6 +55,10 @@ SUB_SOURCES = [
     "https://raw.githubusercontent.com/peasoft/NoMoreWalls/master/list.txt",
     "https://raw.githubusercontent.com/ssrsub/ssr/master/v2ray",
     "https://raw.githubusercontent.com/snakem982/proxypool/main/source/v2ray-2.txt",
+    # 高星代理池仓库（GitHub 搜索精选，2026-10-28）
+    "https://raw.githubusercontent.com/VPN-Subcription-Links/ClashX-V2Ray-TopFreeProxy/main/combine/clash.config.yaml",
+    "https://raw.githubusercontent.com/Au1rxx/free-vpn-subscriptions/main/output/all-verified/clash-0001.yaml",
+    "https://raw.githubusercontent.com/sunmiao4458/free-proxy-airport/main/output/clash.yaml",
 ]
 
 
