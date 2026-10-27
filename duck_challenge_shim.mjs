@@ -75,6 +75,8 @@ function makeSandbox() {
         // 万能假元素：未知属性返回链式安全的值，未知方法返回空函数
         const store = { innerHTML: '', textContent: '', style: {},
           offsetWidth: 100, offsetHeight: 20,   // 可见性检测（真 Chrome 中非零）
+          scrollWidth: 100, scrollHeight: 20,   // 滚动尺寸检测（第5项）
+          clientWidth: 100, clientHeight: 20,
           getBoundingClientRect() { return { width: 100, height: 20, top: 0, left: 0, right: 100, bottom: 20 }; },
         };
         const el = Object.create(G.HTMLDivElement.prototype);   // instanceof 检测
@@ -97,10 +99,15 @@ function makeSandbox() {
       })(),
       // 全局 querySelectorAll：返回带 children 的 NodeList（constructor.name 检测）
       querySelectorAll() {
-        const nl = new NodeList_();
+        const nl = new G.NodeList();
         nl.children = { constructor: { name: 'NodeList' } };
         return nl;
       },
+      querySelector() {
+        // duck.ai 页面特有元素检测（#jsa 等）——真页面上存在，返回万能元素
+        return magicEl;
+      },
+      getElementById() { return magicEl; },
       documentElement: { childElementCount: 0 },
     },
     console,
@@ -114,7 +121,7 @@ function makeSandbox() {
     Window: function Window() {},       // 跨 frame Window 构造器（挑战检测用）
     Proxy, Reflect, Map, Set, WeakMap,
     // 屏幕/视口（新挑战变体检测）
-    getComputedStyle() { return { getPropertyValue() { return ''; }, width: '100px', height: '20px', display: 'block' }; },
+    getComputedStyle() { return { getPropertyValue() { return '12px'; }, width: '100px', height: '20px', display: 'block' }; },
     screen: { width: 1920, height: 1080, availWidth: 1920, availHeight: 1040,
               colorDepth: 24, pixelDepth: 24, availLeft: 0, availTop: 0 },
     innerWidth: 1920, innerHeight: 937,

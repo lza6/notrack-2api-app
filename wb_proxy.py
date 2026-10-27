@@ -22536,7 +22536,12 @@ class Handler(BaseHTTPRequestHandler):
                     messages = duck_fc.translate_tool_messages(messages)
                     messages = duck_fc.inject_fc(messages, payload.get("tools"),
                                                  payload.get("tool_choice"))
+                # FC 模式下关闭 duck 服务端工具（canUseTools），否则模型输出
+                # <tool_call> 会被 duck 当搜索意图吞进 continuation 流
+                if fc_mode:
+                    duck_upstream.set_fc_mode(True)
                 adapter = duck_upstream.duck_chat_stream(model, messages)
+                duck_upstream.set_fc_mode(False)
                 if want_stream:
                     return self._duck_stream_response(adapter, model, fp, t_start,
                                                       fc_mode=fc_mode)

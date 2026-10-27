@@ -145,6 +145,15 @@ def init_pool(log=None, headless=None):
     return POOL
 
 
+_FC_MODE = False
+
+
+def set_fc_mode(on: bool):
+    """伪 FC 模式开关：wb_proxy 在 tools 存在时置 True（canUseTools 关闭）。"""
+    global _FC_MODE
+    _FC_MODE = bool(on)
+
+
 def build_duck_body(model, messages, stream=True):
     """OpenAI messages -> duck chat 请求体。
 
@@ -179,7 +188,7 @@ def build_duck_body(model, messages, stream=True):
     return {
         "model": model,
         "messages": duck_msgs,
-        "canUseTools": True,
+        "canUseTools": not _FC_MODE,
         "reasoningEffort": "none",
         "canUseApproxLocation": None,
         "canDelegateImageGeneration": None,

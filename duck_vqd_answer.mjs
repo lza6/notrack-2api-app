@@ -13,7 +13,8 @@ export async function answerChallenge(jsCode) {
   out.meta = {
     ...(raw.meta || {}),
     origin: 'https://duck.ai',
-    stack: 'Error\n    at l (https://duck.ai/dist/duckai-dist/entry.duckai.ee812f528704ac6cf8c3.js:2:2140175)\n    at async https://duck.ai/dist/duckai-dist/entry.duckai.ee812f528704ac6cf8c3.js:2:1867302',
+    // 官方真实格式（CDP 抓包确认）：页面内 eval 处的栈，固定行号
+    stack: 'Error\n    at <anonymous>:20:13',
     duration: '4',
   };
   return Buffer.from(JSON.stringify(out), 'utf8').toString('base64');
