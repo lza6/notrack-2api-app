@@ -75,22 +75,24 @@ duck.ai 协议不支持 OpenAI function calling，本网关用 prompt 注入模�
 
 ## 目录
 ```
-根目录（活跃代码，源码运行入口）：
-  wb_proxy.py       网关主体（多Key/用量/面板/伪FC）
-  duck_pure.py      纯协议通道（curl_cffi+Node 沙箱，零浏览器，默认）
-  duck_fc.py        Function Calling 模拟层（tools 注入/解析/流式缓冲）
-  duck_client.py    Chrome CDP 出口池（自愈重建，DUCK_PURE=0 兜底）
-  duck_upstream.py  duck→OpenAI 协议适配
-  duck_challenge_shim.mjs / duck_vqd_answer.mjs  挑战 Node 沙箱
-  proxy_sources.py  免费代理源抓取（31 源 + 11 订阅源）
-  mihomo_runner.py  内置 mihomo 内核管理（vless/vmess/ss -> socks5）
-  proxy_pool_ext.py 自动出口扩展后台任务
-  wb_*.py           上游/账号/计费/看板等支撑模块
-  dashboard.html    用量看板（单文件）
+wb_proxy.py        入口（薄壳，python wb_proxy.py --port 8788）
 
-backend/           桌面版后端（desktop/main.js 从此启动，与根目录同步）
+gateway/           全部实现（包）
+  wb_proxy.py        网关主体（多Key/用量/面板/伪FC）
+  duck_pure.py       纯协议通道（curl_cffi+Node 沙箱，零浏览器，默认）
+  duck_fc.py         Function Calling 模拟层
+  duck_client.py     Chrome CDP 出口池（DUCK_PURE=0 兜底）
+  duck_upstream.py   duck→OpenAI 协议适配
+  duck_challenge_shim.mjs / duck_vqd_answer.mjs  挑战 Node 沙箱
+  proxy_sources.py   免费代理源抓取（31 源 + 11 订阅源）
+  mihomo_runner.py   内置 mihomo 内核管理
+  proxy_pool_ext.py  自动出口扩展后台任务
+  wb_*.py            上游/账号/计费/看板等支撑模块
+  dashboard.html     用量看板（单文件）
+
+backend/           桌面版后端（desktop/main.js 从此启动，薄壳+gateway 同款）
 desktop/           Electron 桌面壳
-archive/           历史归档（server.py 精简版/demo/sources-*/上游快照/workbuddy 旧码）
+archive/           历史归档（精简版网关/demo/上游快照/workbuddy 旧码）
 tools/mihomo/      运行时内核（自动下载）
 accounts/ usage/   运行时数据
 .agent/ reports/   项目记忆与变更报告
