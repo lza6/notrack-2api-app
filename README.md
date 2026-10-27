@@ -9,9 +9,18 @@
 
 **源码版**：
 ```bat
-pip install websocket-client
+pip install -r requirements.txt
 python wb_proxy.py --port 8788
 ```
+
+## 安全选项
+
+| 项 | 说明 |
+|---|---|
+| 面板密码 | 默认 `admin`（仅本机回环免密直进）。`--lan` 暴露到局域网前**必须**在面板改密码，启动日志会醒目警告。 |
+| API Key 落盘加密 | `--encrypt-at-rest` 或 `DUCK_ENCRYPT_AT_REST=1`：settings.json 中的 API key 以 AES-256-GCM 信封存储，密钥在 `accounts/.atrest.key`。防单文件泄露；整个 accounts/ 目录一起被拷走则无防护。 |
+| 出口质量评分 | 出口池按 0-100 分自动排序选取（成功率+时延+连续失败惩罚），坏节点自动沉底，面板出口列表透出 score。 |
+| 出口指纹隔离 | `DUCK_EXIT_SEED` 可为每个出口派生稳定的挑战指纹（Canvas/WebGL/Audio/WebRTC 面），出口间互不关联。 |
 
 ## 接入
 
