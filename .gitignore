@@ -3,7 +3,6 @@ sources-full/
 sources-key-files/
 demo.html
 demo_server.py
-backend/
 accounts/
 usage/
 boot*.log
@@ -23,3 +22,14 @@ tools/mihomo/dbg*.log
 tools/mihomo/runner_pid.txt
 tools/mihomo/alive_nodes.json
 tools/mihomo/auto_exits_state.json
+
+# desktop 构建产物与依赖（electron-builder 输出，不入库）
+desktop/node_modules/
+desktop/dist/
+desktop/electron_dev.log
+*.pyc
+
+# mihomo 运行态补充（各 json 产物）
+tools/mihomo/alive_urls.json
+tools/mihomo/working_direct.json
+tools/mihomo/duck_ok_nodes.json

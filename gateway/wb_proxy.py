@@ -19335,8 +19335,12 @@ class Handler(BaseHTTPRequestHandler):
         if not self._authorized():
             return
         if UPDATES:
-            payload = UPDATES.status()
+            # _DuckShim 情形（updates 模块被 shim 掉）status() 返回 None；
+            # 非 shim 但尚未跑过首轮检查也可能返回 None——统一兜底。
+            payload = UPDATES.status() or {}
         else:
+            payload = {}
+        if not payload:
             payload = {
                 "current_version": running_version(),
                 "latest_version": None, "update_available": False,
@@ -19346,7 +19350,7 @@ class Handler(BaseHTTPRequestHandler):
                 "published_at": "",
                 "msg": "更新检查未运行",
             }
-        payload.update(wb_update_request.status())
+        payload.update(wb_update_request.status() or {})
         return self._json(200, payload)
 
     def _get_update_backups(self):
@@ -21101,8 +21105,8 @@ class Handler(BaseHTTPRequestHandler):
         """
         if not UPDATES:
             return self._json(200, {"ok": False, "msg": "更新检查未运行"})
-        status = UPDATES.check(manual=True)
-        status.update(wb_update_request.status())
+        status = UPDATES.check(manual=True) or {}
+        status.update(wb_update_request.status() or {})
         status["ok"] = True
         return self._json(200, status)
 

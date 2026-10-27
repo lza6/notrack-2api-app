@@ -5,13 +5,16 @@ const http = require('http');
 const fs = require('fs');
 
 const PORT = 8788;
-const BACKEND_DIR = path.join(__dirname, '..', 'backend');
-const PY_DIST = path.join(process.resourcesPath || __dirname, 'python', 'pythonw.exe');
-const PY_LOCAL = [
-  path.join(BACKEND_DIR, 'python', 'pythonw.exe'),
-  PY_DIST,
-].find(p => fs.existsSync(p));
-const PY_EXE = PY_LOCAL || 'pythonw.exe';
+// backend 单源化：网关源码只保留仓库根 gateway/ 一份（backend/ 拷贝已删除，
+// 避免 drift）。开发态 SCRIPT 指仓库根薄壳 wb_proxy.py；打包态由
+// electron-builder extraResources 把根 wb_proxy.py + gateway/** 落到
+// resources/app.asar.unpacked 根（与 asar 内 main.js 的 app.getAppPath() 对齐）。
+const APP_ROOT = path.join(__dirname, '..');
+const RES_ROOT = process.resourcesPath
+  ? path.join(process.resourcesPath, 'app.asar.unpacked')
+  : APP_ROOT;
+const BACKEND_DIR = fs.existsSync(path.join(RES_ROOT, 'wb_proxy.py')) ? RES_ROOT : APP_ROOT;
+const PY_EXE = 'pythonw.exe';
 const SCRIPT = path.join(BACKEND_DIR, 'wb_proxy.py');
 
 let backend = null;

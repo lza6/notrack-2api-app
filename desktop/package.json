@@ -29,10 +29,14 @@
     ],
     "extraResources": [
       {
-        "from": "../backend",
-        "to": "backend",
+        "from": "..",
+        "to": "app.asar.unpacked",
         "filter": [
-          "**/*"
+          "wb_proxy.py",
+          "gateway/**",
+          "!gateway/__pycache__/**",
+          "!gateway/challenge_js.js",
+          "!**/*.pyc"
         ]
       }
     ],
