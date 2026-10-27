@@ -15,6 +15,133 @@ class G_NodeList extends Array {}
 const G = { Element: G_Element, HTMLElement: G_HTMLElement, HTMLDivElement: G_HTMLDivElement, NodeList: G_NodeList };
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36';
 
+// ── B4 指纹面补齐：Canvas / WebGL / AudioContext / WebRTC ────────────────
+// 挑战 JS 若探测这些 API，缺 API 本身就是「非浏览器」特征。这里给出形态
+// 正确的假实现：返回值稳定（同输入同输出，避免每次挑战产生新指纹）、
+// 形态与真 Chrome 一致（方法存在、类型正确），数值取自常见 Win11 + Intel
+// 核显机器的中位样本。稳定性优先于真实性——上游风控主要看跨请求一致性。
+function makeFingerprintSurface(seedStr) {
+  // 由种子派生一个稳定的 32 位哈希，保证同一出口每次挑战指纹一致
+  let h = 2166136261;
+  for (let i = 0; i < seedStr.length; i++) { h ^= seedStr.charCodeAt(i); h = Math.imul(h, 16777619); }
+  const seed = h >>> 0;
+  const canvasHash = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk' +
+    (seed % 100).toString().padStart(2, '0') + 'AAAAAElFTkSuQmCC';
+
+  const canvas2d = {
+    fillRect() {}, fillText() {}, strokeText() {}, arc() {}, beginPath() {},
+    closePath() {}, fill() {}, stroke() {}, save() {}, restore() {},
+    measureText: (t) => ({ width: String(t).length * 7.2 + (seed % 97) / 10 }),
+    getImageData: (x, y, w, h) => ({ data: new Uint8ClampedArray(Math.max(4, (w || 1) * (h || 1) * 4)), width: w, height: h }),
+    isPointInPath: () => false,
+    createLinearGradient: () => ({ addColorStop() {} }),
+  };
+  const makeCanvas = () => ({
+    width: 300, height: 150, style: {},
+    getContext(kind) {
+      const k = String(kind || '');
+      if (k === '2d') return canvas2d;
+      if (k === 'webgl' || k === 'webgl2' || k === 'experimental-webgl') return makeWebgl(k);
+      return null;  // 真 Chrome 对未知类型也返回 null
+    },
+    toDataURL: () => canvasHash,               // 稳定哈希：同出口每次一致
+    toBlob: (cb) => { if (typeof cb === 'function') cb({ size: 68, type: 'image/png' }); },
+    addEventListener() {}, removeEventListener() {},
+  });
+  const glConst = (v) => v;  // 常量直接透传数值
+  function makeWebgl(kind) {
+    return {
+      // 常见 getParameter 查询项（Win11 + Intel UHD 770 形态）
+      VENDOR: glConst(0x1F00), RENDERER: glConst(0x1F01), VERSION: glConst(0x1F02),
+      SHADING_LANGUAGE_VERSION: glConst(0x8B8C),
+      UNMASKED_VENDOR_WEBGL: glConst(0x9245), UNMASKED_RENDERER_WEBGL: glConst(0x9246),
+      MAX_TEXTURE_SIZE: glConst(0x0D33), MAX_VIEWPORT_DIMS: glConst(0x0D3A),
+      MAX_RENDERBUFFER_SIZE: glConst(0x84E8), MAX_TEXTURE_IMAGE_UNITS: glConst(0x8872),
+      getParameter(p) {
+        switch (p) {
+          case 0x1F00: return 'WebKit';
+          case 0x1F01: return 'WebKit WebGL';
+          case 0x1F02: return kind === 'webgl2' ? 'WebGL 2.0 (OpenGL ES 3.0 Chromium)' : 'WebGL 1.0 (OpenGL ES 2.0 Chromium)';
+          case 0x8B8C: return 'WebGL GLSL ES 3.00' + (kind === 'webgl2' ? '' : ' 1.00');
+          case 0x9245: return 'Google Inc. (Intel)';
+          case 0x9246: return 'ANGLE (Intel, Intel(R) UHD Graphics 770 (0x00004680) Direct3D11 vs_5_0 ps_5_0, D3D11)';
+          case 0x0D33: return 16384;
+          case 0x84E8: return 16384;
+          case 0x8872: return 16;
+          case 0x0D3A: return new Int32Array([32767, 32767]);
+          default: return 0;
+        }
+      },
+      getExtension(name) {
+        if (name === 'WEBGL_debug_renderer_info') return { UNMASKED_VENDOR_WEBGL: 0x9245, UNMASKED_RENDERER_WEBGL: 0x9246 };
+        return {};   // 其余扩展返回真对象，扩展名探测不穿帮
+      },
+      getSupportedExtensions: () => ['ANGLE_instanced_arrays', 'EXT_blend_minmax', 'EXT_color_buffer_half_float',
+        'OES_texture_float', 'OES_standard_derivatives', 'WEBGL_debug_renderer_info', 'WEBGL_lose_context'],
+      createBuffer: () => ({}), bindBuffer() {}, bufferData() {},
+      createProgram: () => ({}), createShader: () => ({}),
+      attachShader() {}, linkProgram() {}, useProgram() {}, shaderSource() {}, compileShader() {},
+      getShaderParameter: () => true, getProgramParameter: () => true,
+      getShaderInfoLog: () => '', getProgramInfoLog: () => '',
+      readPixels: (x, y, w, h, fmt, type, pixels) => { if (pixels) pixels.fill(128); },
+      canvas: null,
+    };
+  }
+  const audioCtx = {
+    sampleRate: 44100, state: 'running', currentTime: 0,
+    destination: { channelCount: 2, channelCountMode: 'explicit', channelInterpretation: 'speakers', maxChannelCount: 2 },
+    createOscillator: () => ({ type: 'triangle', frequency: { value: 10000, setValueAtTime() {} },
+      connect() {}, start() {}, stop() {}, disconnect() {} }),
+    createDynamicsCompressor: () => ({ threshold: { value: -24 }, knee: { value: 30 }, ratio: { value: 12 },
+      attack: { value: 0.003 }, release: { value: 0.25 },
+      connect() {}, disconnect() {} }),
+    createAnalyser: () => ({ frequencyBinCount: 1024, getFloatFrequencyData(a) { if (a) a.fill(-100 + (seed % 50) / 10); },
+      connect() {}, disconnect() {} }),
+    createBuffer: (ch, len, rate) => ({ numberOfChannels: ch, length: len, sampleRate: rate,
+      getChannelData: () => new Float32Array(len || 1) }),
+    createBufferSource: () => ({ buffer: null, connect() {}, start() {}, stop() {}, disconnect() {} }),
+    createGain: () => ({ gain: { value: 1, setValueAtTime() {} }, connect() {}, disconnect() {} }),
+    decodeAudioData: (buf) => Promise.resolve({ numberOfChannels: 2, length: 44100, sampleRate: 44100,
+      getChannelData: () => new Float32Array(44100) }),
+    close: () => Promise.resolve(), resume: () => Promise.resolve(),
+  };
+  const rtc = {
+    createDataChannel: () => ({ close() {}, send() {} }),
+    createOffer: () => Promise.resolve({ type: 'offer', sdp: 'v=0\r\no=- ' + seed + ' 2 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\n' }),
+    setLocalDescription: () => Promise.resolve(),
+    localDescription: { type: 'offer', sdp: '' },
+    close() {},
+    addEventListener() {},
+  };
+  return {
+    install(sandbox) {
+      sandbox.HTMLCanvasElement = function HTMLCanvasElement() {};
+      sandbox.HTMLCanvasElement.prototype = Object.create(G.HTMLDivElement.prototype);
+      sandbox.OffscreenCanvas = function OffscreenCanvas(w, h) { return Object.assign(makeCanvas(), { width: w, height: h }); };
+      sandbox.AudioContext = function AudioContext() { return audioCtx; };
+      sandbox.webkitAudioContext = sandbox.AudioContext;
+      sandbox.OfflineAudioContext = function OfflineAudioContext(ch, len, rate) {
+        return Object.assign(Object.create(audioCtx), { length: len, sampleRate: rate,
+          startRendering: () => Promise.resolve({ numberOfChannels: ch, length: len, sampleRate: rate,
+            getChannelData: () => { const a = new Float32Array(len || 1); a[0] = (seed % 1000) / 1e6 - 5e-4; return a; } }) });
+      };
+      sandbox.RTCPeerConnection = function RTCPeerConnection() { return rtc; };
+      sandbox.webkitRTCPeerConnection = sandbox.RTCPeerConnection;
+      sandbox.RTCDataChannel = function RTCDataChannel() {};
+      sandbox.MediaStreamTrack = function MediaStreamTrack() {};
+      const origCreateElement = sandbox.document.createElement;
+      sandbox.document.createElement = function (tag) {
+        const t = String(tag || '').toLowerCase();
+        if (t === 'canvas') return makeCanvas();
+        return origCreateElement.call(this, tag);
+      };
+      // OffscreenCanvas 的 webgl 上下文也要有 getContext
+      sandbox.OffscreenCanvas.prototype = { getContext: makeCanvas().getContext };
+    },
+  };
+}
+
+
 function makeSandbox() {
   // 万能元素 v2：自指函数代理——未知属性全部返回自身（既是函数又是对象）
   const magic = new Proxy(function magic() { return magic; }, {
@@ -133,6 +260,8 @@ function makeSandbox() {
                 pathname: '/', search: '', hash: '' },
     history: { length: 2 },
   };
+  // B4：Canvas/WebGL/AudioContext/WebRTC 指纹面（出口种子 → 每出口稳定指纹）
+  makeFingerprintSurface(process.env.DUCK_EXIT_SEED || 'default-exit').install(sandbox);
   // [object Window] 检测：vm 沙箱默认是 [object Object]，用 toStringTag 伪装
   Object.defineProperty(sandbox, Symbol.toStringTag, { value: 'Window', configurable: true });
   Object.defineProperty(sandbox, 'Element', { value: G.Element, configurable: true });
