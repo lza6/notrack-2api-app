@@ -1,0 +1,9 @@
+# DuckFlow 2API gateway — only these are third-party imports.
+# Core HTTP service runs on the Python standard library alone; install with:
+#   pip install -r requirements.txt
+requests>=2.31
+curl_cffi>=0.7
+cryptography>=42.0
+
+# Dev / test only (not needed at runtime)
+pytest>=8.0

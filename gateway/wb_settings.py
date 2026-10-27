@@ -8,6 +8,7 @@ Only the Python standard library is required.
 """
 
 import fnmatch
+import base64
 import hashlib
 import hmac
 import json
@@ -252,6 +253,150 @@ def _digest(password, salt_hex, rounds=PBKDF2_ROUNDS):
 _load_cache = {"key": None, "value": {}}
 
 
+# --------------------------------------------------------- at-rest 加密（可选）
+# 面板需要显示 key 明文，所以不做单向哈希。这里提供可选的落盘加密：开启后
+# settings.json 里的 API key 字段以信封 {"$enc": 1, "v": base64(...)} 形式保存，
+# 加密密钥放在同目录的 .atrest.key 文件里（首次自动生成、只生成一次）。
+# 威胁模型：防「settings.json 被拷走/误提交」这类单文件泄露，不防「整个
+# accounts/ 目录连同密钥文件一起被拿走」——后者需要 OS 级凭据管理，超出本模块
+# 只依赖标准库的边界。加密覆盖 api_key / api_keys[].key / launcher_key 三个字段。
+
+_ENC_ENVIRON_FLAG = "DUCK_ENCRYPT_AT_REST"
+_ENC_KEY_FIELDS = ("api_key", "launcher_key")
+_ENC_ENTRY_KEY_FIELDS = ("key",)
+_ENC_PREFIX = "$enc"
+_ENC_VERSION = 1
+
+
+def encrypt_at_rest_enabled(accounts_dir):
+    """True when at-rest encryption is switched on for this deployment."""
+    env = os.environ.get(_ENC_ENVIRON_FLAG, "").strip().lower()
+    if env in ("1", "true", "yes", "on"):
+        return True
+    try:
+        return bool(load(accounts_dir).get("encrypt_at_rest"))
+    except Exception:
+        return False
+
+
+def set_encrypt_at_rest(accounts_dir, enabled):
+    """Flip the persisted switch. Returns True when the file changed."""
+    with _lock:
+        data = load(accounts_dir)
+        if bool(data.get("encrypt_at_rest")) == bool(enabled):
+            return False
+        data["encrypt_at_rest"] = bool(enabled)
+        if not enabled:
+            # 关闭时把已有的信封解回明文，settings.json 回到老形态。
+            data = _decrypt_settings(data)
+        # 显式把新开关传给 save：此刻盘上还是旧值，save 自己读盘会拿到过期状态。
+        save(accounts_dir, data, encrypt=bool(enabled))
+        return True
+
+
+def _atrest_key_bytes(accounts_dir):
+    """Load or mint the local key file. 32 raw bytes, hex-encoded on disk."""
+    path = os.path.join(accounts_dir, ".atrest.key")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            raw = fh.read().strip()
+        key = bytes.fromhex(raw)
+        if len(key) == 32:
+            return key
+    except (OSError, ValueError):
+        pass
+    key = secrets.token_bytes(32)
+    os.makedirs(accounts_dir, exist_ok=True)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        fh.write(key.hex())
+    return key
+
+
+def _encrypt_field(accounts_dir, plaintext):
+    """AES-256-GCM over plaintext with the local key; returns the envelope dict."""
+    key = _atrest_key_bytes(accounts_dir)
+    nonce = secrets.token_bytes(12)
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    sealed = AESGCM(key).encrypt(nonce, plaintext.encode("utf-8"), None)
+    return {_ENC_PREFIX: _ENC_VERSION, "v": base64.b64encode(nonce + sealed).decode("ascii")}
+
+
+def _decrypt_field(accounts_dir, envelope):
+    """Inverse of _encrypt_field; a malformed envelope returns "" (fail closed)."""
+    try:
+        if not isinstance(envelope, dict) or envelope.get(_ENC_PREFIX) != _ENC_VERSION:
+            return ""
+        blob = base64.b64decode(envelope.get("v") or "")
+        key = _atrest_key_bytes(accounts_dir)
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+        plaintext = AESGCM(key).decrypt(blob[:12], blob[12:], None)
+        return plaintext.decode("utf-8")
+    except Exception:
+        return ""
+
+
+def _is_envelope(value):
+    return isinstance(value, dict) and _ENC_PREFIX in value
+
+
+def _encrypt_settings(accounts_dir, data):
+    """Walk the three credential fields, encrypting any plaintext found."""
+    data = dict(data)
+    for field in _ENC_KEY_FIELDS:
+        value = data.get(field)
+        if isinstance(value, str) and value and not _is_envelope(value):
+            data[field] = _encrypt_field(accounts_dir, value)
+    entries = data.get("api_keys")
+    if isinstance(entries, list):
+        out = []
+        for entry in entries:
+            if isinstance(entry, dict):
+                entry = dict(entry)
+                secret = entry.get("key")
+                if isinstance(secret, str) and secret and not _is_envelope(secret):
+                    entry["key"] = _encrypt_field(accounts_dir, secret)
+            out.append(entry)
+        data["api_keys"] = out
+    return data
+
+
+def _decrypt_settings(data):
+    """Inverse of _encrypt_settings (no accounts_dir needed for the switch-off path)."""
+    # 解密需要 accounts_dir 来定位密钥文件，所以这里用模块级最近一次见到的目录。
+    # save()/load() 都经过这里，目录在进程内是稳定的（单账号目录部署）。
+    accounts_dir = _ENC_LAST_DIR[0]
+    if not accounts_dir:
+        return data
+    data = dict(data)
+    for field in _ENC_KEY_FIELDS:
+        if _is_envelope(data.get(field)):
+            data[field] = _decrypt_field(accounts_dir, data[field])
+    entries = data.get("api_keys")
+    if isinstance(entries, list):
+        out = []
+        for entry in entries:
+            if isinstance(entry, dict) and _is_envelope(entry.get("key")):
+                entry = dict(entry)
+                entry["key"] = _decrypt_field(accounts_dir, entry["key"])
+            out.append(entry)
+        data["api_keys"] = out
+    return data
+
+
+# load()/save() 记录的最近 accounts_dir，供解密路径使用（单部署单目录）。
+_ENC_LAST_DIR = [None]
+
+
+def _settings_has_envelope(data):
+    """True when any credential field on disk is still an encrypted envelope."""
+    if any(_is_envelope(data.get(f)) for f in _ENC_KEY_FIELDS):
+        return True
+    entries = data.get("api_keys")
+    return isinstance(entries, list) and any(
+        isinstance(e, dict) and _is_envelope(e.get("key")) for e in entries)
+
+
 def load(accounts_dir):
     """Return the persisted settings, or an empty dict on a fresh install.
 
@@ -259,6 +404,7 @@ def load(accounts_dir):
     so callers keep the previous "mutate freely" semantics.
     """
     path = settings_path(accounts_dir)
+    _ENC_LAST_DIR[0] = accounts_dir
     try:
         info = os.stat(path)
         key = (path, info.st_mtime, info.st_size)
@@ -279,12 +425,26 @@ def load(accounts_dir):
         pass
     with _lock:
         _load_cache.update({"key": key, "value": data})
+    if _settings_has_envelope(data):
+        # 落盘形态是信封：读侧解回明文，调用方永远看到明文 key。
+        # 解密结果也进缓存（缓存只存明文形态，命中路径与磁盘路径语义一致）。
+        plain = _decrypt_settings(data)
+        with _lock:
+            _load_cache.update({"key": key, "value": plain})
+        return dict(plain)
     return dict(data)
 
 
-def save(accounts_dir, data):
-    """Atomic write so a crash cannot leave a half-written settings file."""
+def save(accounts_dir, data, encrypt=None):
+    """Atomic write so a crash cannot leave a half-written settings file.
+
+    `encrypt` overrides the at-rest switch read (set_encrypt_at_rest passes the
+    new value because the file still holds the old one at this moment).
+    """
     with _lock:
+        _ENC_LAST_DIR[0] = accounts_dir
+        if encrypt if encrypt is not None else encrypt_at_rest_enabled(accounts_dir):
+            data = _encrypt_settings(accounts_dir, data)
         os.makedirs(accounts_dir, exist_ok=True)
         path = settings_path(accounts_dir)
         tmp = path + ".tmp"

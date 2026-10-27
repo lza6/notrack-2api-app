@@ -23105,6 +23105,9 @@ def _parse_cli_args():
                     help="import the desktop app credential as an account, then exit")
     ap.add_argument("--panel-password", default=None,
                     help="set the web panel password on startup (default: admin)")
+    ap.add_argument("--encrypt-at-rest", action="store_true",
+                    help="encrypt API keys at rest in settings.json "
+                         "(or set DUCK_ENCRYPT_AT_REST=1)")
     ap.add_argument("--probe-only", action="store_true",
                     help="only check whether a proxy already listens on the port and "
                          "print what the launcher should say, then exit "
@@ -23213,7 +23216,21 @@ def _bootstrap_runtime(args):
         wb_settings.set_panel_password(ACCOUNTS_DIR, args.panel_password)
         log("panel      : password set from --panel-password")
     elif wb_settings.panel_password_is_default(ACCOUNTS_DIR):
-        log("panel      : password is still the default 'admin' - change it in the panel")
+        log("panel      : WARNING - panel password is still the default 'admin'")
+        log("panel      :   loopback access is passwordless by design; if this")
+        log("panel      :   gateway is reachable from other machines (--lan),")
+        log("panel      :   change the password in the panel Settings page")
+    if getattr(args, "encrypt_at_rest", False) or \
+            os.environ.get("DUCK_ENCRYPT_AT_REST", "").strip().lower() in ("1", "true", "yes", "on"):
+        if wb_settings.set_encrypt_at_rest(ACCOUNTS_DIR, True) or \
+                not wb_settings.encrypt_at_rest_enabled(ACCOUNTS_DIR):
+            pass
+        log("security   : at-rest encryption for API keys: ON "
+            "(key file: %s)" % os.path.join(ACCOUNTS_DIR, ".atrest.key"))
+        # 立刻把现有明文 key 重写为信封形态：只读开关不够，得触发一次 save。
+        with wb_settings._lock:
+            data = wb_settings.load(ACCOUNTS_DIR)
+            wb_settings.save(ACCOUNTS_DIR, data)
     POOL = wb_accounts.AccountPool(ACCOUNTS_DIR, log=log)
     POOL.load()
     POOL.apply_proxy_slots()
