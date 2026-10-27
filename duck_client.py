@@ -82,6 +82,18 @@ CHAT_BRIDGE = r"""
   const controller = new AbortController();
   window.__duckAbort = controller;
   try {
+    // durableStream：服务端 400 强制要求。公钥必须在页面内 WebCrypto 实时生成
+    // （预置静态公钥会被 400 拒收），RSA-OAEP-256 export spki -> JWK。
+    const kp = await crypto.subtle.generateKey(
+      {name:'RSA-OAEP', modulusLength:2048, publicExponent:new Uint8Array([1,0,1]),
+       hash:'SHA-256'}, true, ['encrypt','decrypt']);
+    const pkJwk = await crypto.subtle.exportKey('jwk', kp.publicKey);
+    pkJwk.use = 'enc';
+    args.body.durableStream = {
+      messageId: crypto.randomUUID(),
+      conversationId: crypto.randomUUID(),
+      publicKey: pkJwk,
+    };
     const r = await fetch('https://duck.ai/duckchat/v1/chat', {
       method: 'POST', signal: controller.signal, credentials: 'include',
       headers: {
@@ -122,7 +134,7 @@ CHAT_BRIDGE = r"""
   } catch(e) {
     return JSON.stringify({ok:false, stage:'stream', err:String(e&&e.message||e)});
   }
-})('__ARGS__')
+})((__ARGS__))
 """
 
 

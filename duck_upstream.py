@@ -184,6 +184,14 @@ def build_duck_body(model, messages, stream=True):
         "canUseApproxLocation": None,
         "canDelegateImageGeneration": None,
         "canShowGreeting": False,
+        # 服务端已强制要求 durableStream（2026-10-28 实测 400 ERR_BAD_REQUEST）。
+        # RSA-OAEP 公钥由浏览器 WebCrypto 生成（页面内注入生成），Python 侧预生成
+        # 固定密钥即可（duck 只用公钥加密下行流，私钥我们不需要——SSE 已直接回读）。
+        "durableStream": {
+            "messageId": str(__import__("uuid").uuid4()),
+            "conversationId": str(__import__("uuid").uuid4()),
+            "publicKey": None,  # 页面内 WebCrypto 实时生成填充
+        },
     }
 
 
