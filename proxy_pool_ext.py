@@ -148,6 +148,25 @@ class AutoProxyManager:
         l7_ok, l7_stats = proxy_sources.l7_validate((mihomo_first + others)[:300])
         stats["l7_ok"] = len(l7_ok)
 
+        # 4.5 直连代理文件（working_proxies 格式，免 mihomo）也纳入候选
+        direct_file = os.environ.get("DUCK_PROXY_FILE", "").strip()
+        if direct_file:
+            try:
+                with open(direct_file, encoding="utf-8") as f:
+                    arr = json.load(f)
+                if isinstance(arr, list):
+                    extra = []
+                    for item in arr:
+                        u = item.get("proxy") if isinstance(item, dict) else item
+                        if isinstance(u, str) and "://" in u and u not in candidates:
+                            extra.append(u)
+                    if extra:
+                        d_ok, _ = proxy_sources.l7_validate(extra[:200])
+                        l7_ok = l7_ok + d_ok
+                        stats["direct_file_ok"] = len(d_ok)
+            except (OSError, ValueError):
+                pass
+
         # 5. 注册进出出口池（懒 spawn，不超过 max_exits）
         for url in l7_ok[:max_exits]:
             name = ("auto-mihomo-" + url.rsplit(":", 1)[1]) if url.startswith("socks5://127.0.0.1") \

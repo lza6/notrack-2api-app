@@ -42,6 +42,24 @@ FREE_PROXY_SOURCES = [
     ("monosans-http", "https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/http.txt", "ipport"),
     ("thespeedx-socks5", "https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/socks5.txt", "ipport"),
     ("thespeedx-socks4", "https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/socks4.txt", "ipport"),
+    # 31 源完整清单（new-api-Max free_fetcher.go 同款，2026-10-28 补齐）
+    ("jetkai-http", "https://raw.githubusercontent.com/jetkai/proxy-list/main/online-proxies/txt/proxies-http.txt", "ipport"),
+    ("jetkai-socks5", "https://raw.githubusercontent.com/jetkai/proxy-list/main/online-proxies/txt/proxies-socks5.txt", "ipport"),
+    ("hookzof-socks5", "https://raw.githubusercontent.com/hookzof/socks5_list/master/proxy.txt", "ipport"),
+    ("mmpx12-http", "https://raw.githubusercontent.com/mmpx12/proxy-list/master/http.txt", "ipport"),
+    ("vakhov-http", "https://raw.githubusercontent.com/vakhov/fresh-proxy-list/master/http.txt", "ipport"),
+    ("openproxylist-https", "https://raw.githubusercontent.com/roosterkid/openproxylist/main/HTTPS_RAW.txt", "ipport"),
+    ("openproxylist-socks5", "https://raw.githubusercontent.com/roosterkid/openproxylist/main/SOCKS5_RAW.txt", "ipport"),
+    ("sunny9577-http", "https://raw.githubusercontent.com/sunny9577/proxy-scraper/master/generated/http_proxies.txt", "ipport"),
+    ("zevtyardt-all", "https://raw.githubusercontent.com/zevtyardt/proxy-list/main/all.txt", "ipport"),
+    ("hideip-http", "https://raw.githubusercontent.com/zloi-user/hideip.me/master/http.txt", "ipport"),
+    ("hideip-https", "https://raw.githubusercontent.com/zloi-user/hideip.me/master/https.txt", "ipport"),
+    ("hideip-socks4", "https://raw.githubusercontent.com/zloi-user/hideip.me/master/socks4.txt", "ipport"),
+    ("hideip-socks5", "https://raw.githubusercontent.com/zloi-user/hideip.me/master/socks5.txt", "ipport"),
+    ("monosans-socks4", "https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/socks4.txt", "ipport"),
+    ("monosans-socks5", "https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/socks5.txt", "ipport"),
+    ("ercindedeoglu-socks5", "https://raw.githubusercontent.com/ErcinDedeoglu/proxies/main/proxies/socks5.txt", "ipport"),
+    ("shiftytr-socks5", "https://raw.githubusercontent.com/ShiftyTR/Proxy-List/master/socks5.txt", "ipport"),
 ]
 
 # ── 免费源 2：v2ray/Clash 订阅（lza6/free-VPN + lza6/tingfengVPS README 汇总） ──

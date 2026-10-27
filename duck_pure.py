@@ -431,7 +431,7 @@ def init_pool(log=None, headless=None):
     if POOL is not None:
         return POOL
     POOL = PureDuckPool(log=log)
-    # 出口来源：DUCK_EXITS 环境变量（与 CDP 通道同格式）
+    # 出口来源：DUCK_EXITS 环境变量（与 CDP 通道同格式）+ 直连代理文件
     spec = os.environ.get("DUCK_EXITS", "").strip()
     n = 0
     for part in spec.split(","):
@@ -445,6 +445,32 @@ def init_pool(log=None, headless=None):
             name, proxy = part, None
         POOL.register_exit(name, proxy=proxy)
         n += 1
+    # 直连代理文件（working_proxies.json / 纯 URL 列表）：免费 http/socks 直连代理，
+    # 无需 mihomo。DUCK_PROXY_FILE 指向文件，每行一个 URL 或 JSON 数组 [{proxy:...}]
+    proxy_file = os.environ.get("DUCK_PROXY_FILE", "").strip()
+    if proxy_file:
+        try:
+            with open(proxy_file, encoding="utf-8") as f:
+                content = f.read()
+            urls = []
+            try:
+                arr = json.loads(content)
+                if isinstance(arr, list):
+                    for item in arr:
+                        u = item.get("proxy") if isinstance(item, dict) else item
+                        if isinstance(u, str) and "://" in u:
+                            urls.append(u)
+            except ValueError:
+                urls = [l.strip() for l in content.splitlines()
+                        if l.strip() and "://" in l]
+            for i, u in enumerate(urls[:80]):
+                POOL.register_exit("pf%d" % i, proxy=u)
+                n += 1
+            if log:
+                log("duck pure: %d direct proxies from %s" % (len(urls[:80]), proxy_file))
+        except OSError as exc:
+            if log:
+                log("proxy file unreadable %s: %s" % (proxy_file, exc))
     if n == 0:
         POOL.register_exit("direct", proxy=None)
         n = 1
