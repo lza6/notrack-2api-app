@@ -182,14 +182,46 @@ class PureUpstreamAdapter:
         return False
 
 
+def _flatten_multiturn(messages):
+    """多轮（含 assistant）→ 拼接单轮。
+
+    duck 纯协议下含 assistant 角色的 messages 返回 400（多轮格式校验，
+    CDP/纯协议皆然，2026-10-28 实测）。duck 无服务端会话——历史本来就是
+    客户端携带的，拼接成 User/Assistant 文本块语义等价，实测模型正确续写。
+    """
+    if not any(isinstance(m, dict) and m.get('role') == 'assistant'
+               for m in messages or []):
+        return messages
+    lines = []
+    for m in messages or []:
+        if not isinstance(m, dict):
+            continue
+        role = m.get('role')
+        c = m.get('content')
+        if isinstance(c, list):  # [{type:text,text}] → 文本
+            c = chr(10).join(p.get('text', '') for p in c
+                          if isinstance(p, dict) and p.get('type') == 'text')
+        if c is None and m.get('tool_calls'):
+            c = ' '.join(str((tc.get('function') or {}).get('name') or '')
+                         for tc in m['tool_calls'])
+        if role in ('user', 'assistant') and c:
+            lines.append('%s: %s' % ('User' if role == 'user' else 'Assistant', c))
+        elif role == 'tool' and c:
+            lines.append('Tool result: %s' % c)
+    lines.append('Assistant:')
+    return [{'role': 'user', 'content': chr(10).join(lines)}]
+
+
 def build_duck_body(model, messages, stream=True, fc_mode=False):
     """OpenAI messages -> duck body（纯协议版，与 duck_upstream 同款语义）。
 
+    多轮（含 assistant）自动拼接为单轮（duck 多轮格式 400 的绕过）。
     fc_mode: 伪 FC 场景下 canUseTools 必须 False——duck 内置工具（联网搜索）
     会把 <tool_call> 文本当搜索意图吞掉（模型输出进 CHAT_TITLE/continuation
     而非正文帧）。FC 协议在客户端侧执行，不需要 duck 的服务端工具。
     """
     import duck_upstream  # 复用 build_duck_body 的消息转换
+    messages = _flatten_multiturn(messages)
     body = duck_upstream.build_duck_body(model, messages, stream)
     if fc_mode:
         body['canUseTools'] = False
