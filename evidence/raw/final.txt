@@ -1,0 +1,15 @@
+=== 流式（经 new-api） ===
+data: {"id": "chatcmpl-duck-9bc3f28090b2443a", "object": "chat.completion.chunk", "created": 1793189516, "model": "gpt-6-luna", "choices": [{"index": 0, "delta": {"content": "I"}, "finish_reason": null}]}
+
+data: {"id": "chatcmpl-duck-9bc3f28090b2443a", "object": "chat.completion.chunk", "created": 1793189516, "model": "gpt-6-luna", "choices": [{"in
+=== 未知模型（走 new-api 侧判定） ===
+{"error":{"code":"model_not_found","message":"No available channel for model gpt-4o under group default (distributor). Check that the model name matches exactly one listed on this site, and that the g
+=== 额度消耗（倍率是否 37.5 生效） ===
+model None | prompt 10 | comp 15 | quota 1500 | ratio None None
+model None | prompt 2 | comp 5 | quota 450 | ratio None None
+=== 设模型倍率 0 ===
+{"message":"","success":true}
+=== 再来一次请求 ===
+200
+=== 扣费记录（最新一条） ===
+quota: 0 | prompt: 4 | comp: 8

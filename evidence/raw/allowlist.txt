@@ -1,0 +1,21 @@
+=== 渠道 base_url 改为 localhost ===
+update: 401
+{"code":"AUTH_UNAUTHORIZED","message":"Unauthorized, invalid access token","success":false}
+=== 经 new-api 调 duck2api ===
+500
+{"error":{"message":"upstream address rejected (request id: 20261028120927116161600fd097e04qIeoCQIL)","type":"new_api_error","param":"","code":"upstream_unavailable"}}
+=== 重新登录 ===
+200
+token: eyJhbGciOiJIUzI1...
+=== 改 base_url → localhost ===
+200
+{"message":"Invalid parameters","success":false}
+=== 调用 ===
+500
+{"error":{"message":"upstream address rejected (request id: 20261028120940912076200fd097e048adjFNtX)","type":"new_api_error","param":"","code":"upstream_unavailable"}}
+=== 改 base_url（去掉 status 字段） ===
+200
+{"data":{"id":1,"type":1,"key":"","openai_organization":null,"test_model":null,"status":1,"name":"Du
+=== 调用 ===
+502
+{"error":{"message":"upstream unreachable: network error to upstream (request id: 20261028121008390748200fd097e04dCGL22iS)","type":"new_api_error","param":"","code":"upstream_unreachable"}}

@@ -197,6 +197,23 @@ duck.ai 的挑战层会随机 418（实测单次请求成功率约 50%，duck2ap
 
 ## 5. 风险与坑（按严重度）
 
+0. **【实测最大门槛】new-api 默认拒绝私网/回环上游（SSRF 防护）** —
+   `service/url_guard.go` 的 `ssrfBlockedCIDRs` 直接封掉 `127.0.0.0/8`、`10.0.0.0/8`、
+   `172.16.0.0/12`、`192.168.0.0/16`、`169.254/16` 等；**字面 IP 在查白名单之前就被拒**
+   （`validateLiteralIP`，`url_guard.go:206-229`），所以「填 127.0.0.1 再想靠白名单放行」不成立。
+   实测：base_url 填 `http://127.0.0.1:8788` → 请求返回
+   `500 {"code":"upstream_unavailable","message":"upstream address rejected"}`。
+   三条可行解法（按推荐度）：
+   1. **用域名 + `URL_GUARD_ALLOWLIST`**（推荐）：给 duck2api 一个内网域名（如 `duck.internal`
+      并在 hosts/DNS 指向实际 IP），渠道 base_url 填域名，new-api 启动加
+      `URL_GUARD_ALLOWLIST=duck.internal`。实测：改成 `http://localhost:18940` +
+      `URL_GUARD_ALLOWLIST=localhost` 后，SSRF 拒绝消失（`isAllowlistedHost` 早于 DNS 解析返回）。
+   2. **内网单机部署时关守卫**：`SSRF_GUARD_DISABLED=true`（源码注释明确「仅供本地基准/CI」，
+      内网可信环境可用）。实测：关掉后 `http://127.0.0.1:18940` 直连成功。
+   3. 把 duck2api 放到公网可达地址（不推荐，等于把无鉴权面板暴露风险外包给网络层）。
+   另外注意端口白名单：`fetch_setting.allowed_ports` 默认只有 `80/443/8080/8443`，
+   用 8788 等端口需补（可通过 `PUT /api/option/ {"key":"fetch_setting.allowed_ports","value":"[\"80\",\"443\",\"8080\",\"8443\",\"8788\"]"}` 设置，
+   或直接把 duck2api 跑在 8080/443）。
 0. **未知模型名的错误语义（本轮已修，直接影响对接）** — 修复前：传 `gpt-4o` 之类 duck 不提供的
    模型名会落到账号通道，返回 `503 no usable account for realm 'intl'`；new-api 会把它当渠道故障，
    渠道测试直接失败、甚至累计失败触发自动禁用。**现已改为**：不在 duck 模型清单且账号通道不可用时
@@ -215,6 +232,17 @@ duck.ai 的挑战层会随机 418（实测单次请求成功率约 50%，duck2ap
 6. **Node 缺失** — 挑战解算必需 `node`。容器化时记得装 Node（或用带 Node 的基础镜像）。
 7. **出口池是 IP 命门** — 免费代理质量决定稳定性；住宅/固定 IP 更稳。出口质量分低的节点会被自动沉底（`exit_score.py`）。
 8. **单点** — duck2api 挂了 new-api 这个渠道就不可用。建议：duck2api 加 systemd/docker restart 策略；new-api 侧保留其它渠道兜底。
+9. **【实测】未配倍率的真实扣费**：未知模型按 37.5 倍率计费。实测 2 prompt + 5 completion
+   tokens 扣 **450 quota**（=2×37.5 + 5×75）；10+15 tokens 扣 **1500**。在「模型倍率」里把
+   这 3 个模型设为 0 后，同样请求 **quota=0**。所以 §3 步骤 4 不是可选项。
+10. **【实测】渠道更新接口不接受 `status` 字段**：`PUT /api/channel/` 传 `status` 会返回
+    `Invalid parameters`；启停用单独的状态接口（`UpdateChannelStatus`）。
+11. **【实测】未知模型在 new-api 侧就被拦**：用 `gpt-4o` 调 new-api 返回
+    `model_not_found`（“No available channel for model gpt-4o under group default”），
+    不会打到 duck2api——duck2api 的 404 校验是第二道防线（防渠道里误配了模型名）。
+12. **【实测】上游断连的语义**：duck2api 停掉后，new-api 日志明确写
+    `upstream unreachable (network layer, request never reached upstream)` 并返回
+    `502 upstream_unreachable`，不会静默成功。
 
 ---
 
@@ -278,3 +306,32 @@ duck2api 负责"和 duck.ai 打交道"（协议、挑战、出口池），new-ap
 | 2026-10-28 | **模型校验**：缺 `model` → `400 model is required`；模型不在 duck 清单且账号通道不可用 → `404` + 可用模型清单 | 原实现会把未知模型落到账号通道回 `503 no usable account`，外部网关（new-api）会误判为渠道故障并可能自动禁用 | 实测：`gpt-4o` → 404（含清单）、缺 model → 400、`gpt-6-luna` → 200 真实内容（`evidence/raw/model-guard.txt`）；pytest 93 passed |
 
 > 这条改动只在该网关**没有可用账号**（即纯 duck 部署）时生效；保留账号通道的部署行为不变。
+
+---
+
+## 10. 端到端实测记录（2026-10-28，本机真实跑通）
+
+**环境**：duck2api（Python，`192.0.0`... 实为 `127.0.0.1:18940`）+ new-api `new-api-test.exe`
+（Go，`PORT=3001`，`SQLITE_PATH` 指向临时库，`SSRF_GUARD_DISABLED=true`）。
+
+**操作步骤（全部真实执行）**
+
+| # | 动作 | 结果 |
+|---|---|---|
+| 1 | `POST /api/setup` 初始化 root | `{"success":true,"message":"系统初始化成功"}` |
+| 2 | `POST /api/user/login` 取 access_token | 200，拿到 JWT |
+| 3 | `POST /api/channel/` 建渠道（type=1, base_url=`http://127.0.0.1:18940`, 3 个 duck 模型） | 200，渠道 id=1 |
+| 4 | `POST /api/token/` 建令牌（unlimited_quota） | 200，拿到 `sk-...` |
+| 5 | 直连测试（未关 SSRF） | **500 `upstream address rejected`** ← 门槛在此 |
+| 6 | `PUT /api/option/` 设 `fetch_setting.allow_private_ip=true` + 端口白名单 | 200，但字面 IP 仍被拒（见风险 0） |
+| 7 | 改 base_url 为 `http://localhost:18940` + 重启加 `URL_GUARD_ALLOWLIST=localhost` | SSRF 拒绝消失，但 `localhost` 走 IPv6 导致 `connection refused` |
+| 8 | 重启加 `SSRF_GUARD_DISABLED=true`，base_url 回 `127.0.0.1` | **打通** |
+| 9 | 经 new-api 非流式调用 | **200**，`content: "对接成功。"` |
+| 10 | 经 new-api 流式调用 | SSE 正常逐块返回 |
+| 11 | 未知模型 `gpt-4o` | new-api 返回 `model_not_found`（未打到 duck2api） |
+| 12 | 核对扣费（未配倍率） | 2+5 tokens → **450 quota**；10+15 → **1500**（37.5 倍率） |
+| 13 | `PUT /api/option/` 设 `ModelRatio` 三个模型为 0 | 再调用 **quota=0** |
+| 14 | 停掉 duck2api 再调用 | `502 upstream_unreachable` + 日志 `network layer, request never reached upstream` |
+
+**结论**：方案 A 在当前代码上**真实可用**（非纸面推演）。落地时必须一次配好三件事：
+① 出口（duck2api 的出口池）② SSRF（域名白名单或关守卫）③ 模型倍率（否则按 37.5 扣费）。
