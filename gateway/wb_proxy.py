@@ -15596,6 +15596,29 @@ class SSEHeartbeat:
         return False
 
 
+def request_model_error(payload, usable_accounts):
+    """校验请求里的 model。返回 (http_status, message)，通过则返回 None。
+
+    为什么需要它：duck 通道只服务固定模型清单，不在清单里的请求原本会落到
+    账号通道，回一个 503 "no usable account"——外部网关（new-api 等）会把它
+    当成渠道故障，渠道测试失败甚至触发自动禁用。缺 model 更是纯粹的客户端错误。
+    只有在账号通道确实不可用（usable_accounts == 0）时才拦未知模型，
+    保留账号通道的部署行为不变。
+    """
+    model = str((payload or {}).get("model") or "").strip()
+    if not model:
+        return 400, "model is required"
+    try:
+        import duck_upstream
+        duck_models = tuple(duck_upstream.duck_client.DUCK_MODEL_IDS)
+    except Exception:
+        duck_models = ()
+    if duck_models and model not in duck_models and not usable_accounts:
+        return 404, ("model '%s' is not served by this gateway; available models: %s"
+                     % (model, ", ".join(duck_models)))
+    return None
+
+
 def completion_is_empty(chat_obj):
     """True when a folded completion carries no text, reasoning or tool calls.
 
@@ -22581,6 +22604,22 @@ class Handler(BaseHTTPRequestHandler):
             aliases = {}
         _apply_model_aliases(payload, aliases)
         _apply_background_model_alias(payload)
+        # ---- 请求模型校验（对接外部网关时尤其重要）----
+        # 没有 model 或模型名既不在 duck 清单、账号通道也服务不了时，回 4xx；
+        # 否则会落到账号通道回 503 "no usable account"，调用方会误判渠道故障。
+        try:
+            _usable = POOL.count_ready() if POOL is not None else 0
+        except Exception:
+            _usable = 0
+        _model_err = request_model_error(payload, _usable)
+        if _model_err:
+            _status, _msg = _model_err
+            record_error(str(payload.get("model") or "unknown"), _status, _msg[:200],
+                         stream=payload.get("stream"), key=self._key_id())
+            if is_messages_route:
+                return self._anthropic_error(_status, _msg,
+                                             "not_found_error" if _status == 404 else "invalid_request_error")
+            return self._error(_status, _msg, "invalid_request_error")
         # Check per-key concurrency limit (#359)
         key_ok, cur_key_conc, max_key_conc = _acquire_key_slot(self.key_entry)
         if not key_ok:

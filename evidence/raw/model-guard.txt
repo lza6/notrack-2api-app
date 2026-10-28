@@ -1,0 +1,8 @@
+=== 模型校验修复验证 2026-10-28T19:58:39+08:00 ===
+{"model":"gpt-4o","messages":[{"role":"user","cont   -> 404  {"error": {"message": "model 'gpt-4o' is not served by this gateway; available models: mistral-small-2603, tin
+{"messages":[{"role":"user","content":"hi"}]}        -> 400  {"error": {"message": "model is required", "type": "invalid_request_error", "code": 400}}
+{"model":"gpt-6-luna","messages":[{"role":"user","   -> 200  {"id": "msg_0809146fe5c2f9e7016ae1e379faf887d1bdfbc28acc57021a", "object": "chat.completion", "created": 17931
+=== 重构后复验 2026-10-28T20:01:02+08:00 ===
+{"model":"gpt-4o","messages":[{"role":   -> 404 {"error": {"message": "model 'gpt-4o' is not served by this gateway; available models: gpt-5.4-mini,
+{"messages":[{"role":"user","content":   -> 400 {"error": {"message": "model is required", "type": "invalid_request_error", "code": 400}}
+{"model":"gpt-6-luna","messages":[{"ro   -> 200 {"id": "msg_02401cc443660740016ae1e408b5e887d19968923ba037d681", "object": "chat.completion", "creat
