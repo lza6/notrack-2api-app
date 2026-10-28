@@ -9,5 +9,7 @@ PyYAML>=6.0
 # Chrome CDP 通道（gateway/duck_client.py:152，DUCK_PURE=0 时使用）
 websocket-client>=1.7
 
-# Dev / test only (not needed at runtime)
+# Dev / test only (not needed at runtime). CI 用这两者跑测试与覆盖率地板：
+# 缺 coverage 时 CI 会以 "No module named coverage" 失败（本地预装过所以看不见）。
 pytest>=8.0
+coverage>=7.0
