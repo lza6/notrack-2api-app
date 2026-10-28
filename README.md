@@ -99,8 +99,9 @@ gateway/           全部实现（包）
   wb_*.py            上游/账号/计费/看板等支撑模块
   dashboard.html     用量看板（单文件）
 
-backend/           桌面版后端（desktop/main.js 从此启动，薄壳+gateway 同款）
-desktop/           Electron 桌面壳
+desktop/           Electron 桌面壳（backend 已单源化：exe 打包根 wb_proxy.py
+                   + gateway/**，源码只保留 gateway/ 一份）
+tests/             pytest 冒烟套件（python -m pytest tests/）
 archive/           历史归档（精简版网关/demo/上游快照/workbuddy 旧码）
 tools/mihomo/      运行时内核（自动下载）
 accounts/ usage/   运行时数据

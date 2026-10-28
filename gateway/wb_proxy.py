@@ -18731,8 +18731,11 @@ class Handler(BaseHTTPRequestHandler):
     @staticmethod
     def _is_panel_route(path):
         """Management endpoints shown in the web panel.
-        Model listings stay reachable with the API key alone so that plain
-        OpenAI clients can keep discovering models.
+
+        /v1/models is deliberately NOT in this set: since bfc7906 it sits
+        behind _authorized() like every other /v1 route (a configured key
+        must be presented even from loopback), so the docstring's old
+        "model discovery with the key alone" promise is gone by design.
         """
         if path.startswith("/accounts"):
             return True
