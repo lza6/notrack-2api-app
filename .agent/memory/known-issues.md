@@ -10,13 +10,17 @@
 2. ~~backend 双拷贝 drift~~：**已关单**。v1.1 方案B单源化完成（68d4a2c）：backend/ 源码拷贝删除，desktop 打包根 gateway/**，真机 exe 验证通过。
 3. ~~鉴权回归疑云（P1-2）~~：**已裁定**。401/200 两说分别对应配key/未配key两种部署态，皆实证；/v1/models 无key 401 是 bfc7906 有意行为（v1.2 批次修正自相矛盾注释，aaf2b8e）。
 
-## P2（待办）
-4. x-fe-version 硬编码无漂移探测（duck_pure.py）——duck 发版即静默失效。方案 D（自愈+面板可见）待实施。
-6. electron-builder EBUSY 自动化（taskkill 前置已写入 release-checklist，脚本化待做）。
-7. mihomo 内核自动下载无哈希校验（供应链风险，低概率）。
-8. dashboard 前端未展示出口 score 字段（后端 list_exits 已透出，v1.9.0 B3）。
+## 已关闭（v1.9.2, 2026-10-28）
+- ~~#4 x-fe-version 漂移~~：自愈实现（挑战耗尽→抓首页热更+落盘缓存+面板可见），测试 6 例。
+- ~~#6 EBUSY~~：pre-dist.ps1 前置（双向验证），npm dist/pack 自动挂入。
+- ~~#7 mihomo 哈希~~：SHA-256 校验，不匹配拒装（测试 3 例）。
+- ~~#8 dashboard score~~：质量分列+平均分已上线。
+- ~~#10 出口池持久化~~：accounts/duck-exits.json 落盘恢复（测试 5 例），E2E 实证。
 
 ## P3（远期）
 9. wb_proxy.py 23442 行拆分：方案见 docs/plan-b5-split.md，待用户批准。
-10. 出口池当前无持久化（重启丢配置）。
 11. 免费代理节点转发对话明文（设计约束，README 已警示）。
+
+## 新发现（v1.9.2 实施中修复的断层）
+- 面板出口管理只操作 CDP 池而 pure 是默认通道——已修（upsert/remove 同步 pure 池）。
+- pure 池 list_exits 漏列懒注册出口——已修（合并 _registered）。
