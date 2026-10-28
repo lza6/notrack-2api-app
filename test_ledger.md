@@ -41,9 +41,11 @@
 | 真实上游对话（流式/非流式） | e2e | passed | 2026-10-28 | v1.9.3 P1 | evidence/T-CHAT.json |
 | 桌面 exe 真机 | e2e | passed | 2026-10-28 | v1.9.1 | evidence/T-DESKTOP.json |
 | 压测（只读端点 + 错误路径） | load | passed | 2026-10-28 | — | evidence/T-PERF.json |
+| 依赖声明完整性 | unit | passed | 2026-10-28 | v1.9.4 | 扫 gateway/ import vs requirements（4 例） |
+| CI 流水线 | ci | passed | 2026-10-28 | v1.9.4 | run 40680167328：syntax+91 测试+覆盖率地板+node 全绿 |
 | 覆盖率（行） | measured | **16%** | 2026-10-28 | v1.9.4 | `coverage run --source=gateway -m pytest` → TOTAL 16%（22279/18809）；门禁目标 80% **未达标** |
 | 覆盖率（分支） | — | 未测量 | — | — | 需 `coverage run --branch`，本轮未启用 |
-| 单元测试总数 | unit | passed | 2026-10-28 | v1.9.3 | `python -m pytest tests/ -q` → **63 passed** |
+| 单元测试总数 | unit | passed | 2026-10-28 | v1.9.4 | `python -m pytest tests/ -q` → **91 passed**（CI 同结果） |
 
 ## 未覆盖（诚实登记）
 

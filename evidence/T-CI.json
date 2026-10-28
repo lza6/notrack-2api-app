@@ -1,0 +1,64 @@
+{
+  "task_id": "T-CI",
+  "status": "passed",
+  "timestamp": "2026-10-28T19:29:59",
+  "commands_executed": [
+    {
+      "cmd": "gh run list / gh run view（CI 第 1 次，commit bcd8fa0）",
+      "exit_code": 0,
+      "raw_output_tail": "failure 14s — FAILED tests/test_smoke.py::test_parse_clash_yaml_basic | ModuleNotFoundError: No module named 'yaml'"
+    },
+    {
+      "cmd": "gh run view 40679858623（第 2 次，commit 37891ff）",
+      "exit_code": 0,
+      "raw_output_tail": "Unit tests ✓ · Coverage ✗ — /opt/hostedtoolcache/.../python: No module named coverage"
+    },
+    {
+      "cmd": "gh run view 40680167328（第 3 次，commit ae53a3a）",
+      "exit_code": 0,
+      "raw_output_tail": "success 29s · 13/13 steps · Unit tests: 91 passed in 1.32s · TOTAL 22300 18825 16%"
+    }
+  ],
+  "files_changed": [
+    "requirements.txt",
+    "gateway/wb_proxy.py",
+    "gateway/wb_accounts.py",
+    "tests/test_declared_deps.py",
+    ".github/workflows/ci.yml"
+  ],
+  "tests": [
+    {
+      "name": "依赖声明完整性（静态扫描 import vs requirements）",
+      "type": "unit",
+      "status": "passed",
+      "evidence": "tests/test_declared_deps.py 4 例"
+    },
+    {
+      "name": "CI 全流水线",
+      "type": "ci",
+      "status": "passed",
+      "evidence": "GitHub Actions run 40680167328：syntax + pytest 91 + coverage floor + node test 全绿"
+    }
+  ],
+  "coverage_summary": {
+    "lines": 16.0,
+    "branches": null,
+    "functions": null,
+    "statements": 16.0,
+    "note": "CI(Linux runner) 实测 TOTAL 16%（22300 stmts / 18825 miss），与本地一致"
+  },
+  "seams_touched": [],
+  "mock_scenarios_covered": [
+    "missing_third_party_dep",
+    "missing_optional_module"
+  ],
+  "browser_validation": {
+    "performed": false,
+    "paths": [],
+    "screenshots": []
+  },
+  "limitations": [
+    "CI 只在 ubuntu-latest + Python 3.12 上验证；Windows 打包不在 CI 内（需 electron-builder + 大体积缓存）",
+    "覆盖率 16% 仍远低于 policy 的 80% 目标"
+  ]
+}

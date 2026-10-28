@@ -21,6 +21,15 @@
 9. wb_proxy.py 23442 行拆分：方案见 docs/plan-b5-split.md，待用户批准。
 11. 免费代理节点转发对话明文（设计约束，README 已警示）。
 
+## 已关闭（v1.9.4）
+- **未声明的三方依赖**（PyYAML / websocket-client / coverage）：本机装了所以本地全绿，
+  干净 runner 直接 ModuleNotFoundError。CI 首两次失败即由此暴露。
+  已声明 + 新增 `tests/test_declared_deps.py` 静态检查（扫 import vs requirements）。
+  **反模式提醒**：凡是"本机能跑"就当作"依赖没问题"的判断，一律不可信。
+- **已删模块的无保护 import**（wb_agents / wb_tasks）：改为 AgentsUnavailable +
+  明确降级；`/agents` 与 `/agents/available` 现在一致返回不可用及准确原因。
+- ~~P3 出口换 proxy 需重启生效~~：`upsert_exit` 现立即重建 session（3 例测试）。
+
 ## P3（v1.9.3 复验发现，既有行为）
 - 已 spawn 的出口在面板换 proxy 时，内存里的 curl_cffi session 不会重建：盘上写新
   proxy、运行期仍走旧 session，需重启生效（`duck_pure._persist` 偏好 `_registered`，

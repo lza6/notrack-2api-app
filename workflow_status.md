@@ -22,6 +22,8 @@
 | A8 | CI 落地 | builder | 无 CI | .github/workflows/ci.yml | push 后 run 通过 | DONE | Actions run |
 | A9 | P3 出口换 proxy 需重启 | builder | 复验发现 | 立即重建 session | 3 例单测 | DONE | tests/test_exit_proxy_switch.py |
 | A10 | 桌面壳 spawn 失败打死主进程 | builder | 干净 PATH 模拟 | error 监听 + 失败页 | 场景B 实测 | DONE | evidence/raw/desktop-pathA.txt |
+| A11 | CI 跑通（3 次迭代） | builder+verifier | 无 CI | 全绿流水线 | 13/13 steps success | DONE | evidence/T-CI.json |
+| A12 | 未声明依赖（PyYAML/websocket-client/coverage） | builder | CI 首跑暴露 | requirements 声明 + 静态检查测试 | 干净环境可安装 | DONE | tests/test_declared_deps.py |
 
 ## 3. 技能检查记录
 
@@ -47,6 +49,8 @@
 | 出口持久化 E2E | panel token upsert → 落盘 → 列表 | 落盘 duck-exits.json，列表含 audit-exit + direct |
 | fe-version 真实自愈 | 真实首页驱动 | 103404→210303，source=self-healed |
 | 压测 | 并发 /health /v1/models /panel/status /畸形POST | QPS 1790 / 2423 / 2757 / 1069，0 错误 |
+| CI | `gh run list`（push 触发） | 1st 失败(yaml 未声明) → 2nd 失败(coverage 未声明) → **3rd success 29s，91 passed，TOTAL 16%** |
+| 覆盖率实测 | `coverage run --source=gateway -m pytest` | **16%**（22279/18809 本地；CI 22300/18825）；门禁目标 80% 未达标 |
 | exe 真机 | npm run dist → 双击 → health/dashboard/updates/chat | 全通，chat 返回 "exe-ok" |
 
 ## 5. 回滚点
