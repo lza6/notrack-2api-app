@@ -24,16 +24,15 @@ jobs:
       - name: Syntax check
         run: python -m py_compile gateway/*.py wb_proxy.py
 
-      - name: Unit tests
-        run: python -m pytest tests/ -q
-
-      - name: Coverage (no-regression floor)
+      # 一次跑完既出测试结果又出覆盖率（早先这里把 pytest 跑了两遍）。
+      - name: Unit tests + coverage (no-regression floor)
         run: |
           python -m coverage run --source=gateway -m pytest tests/ -q
           python -m coverage report --sort=cover
-          # 地板值 = 当前实测下限（2026-10-28 实测 16%）。门槛只允许上调，
-          # 见 policy.md「覆盖率门禁」——把目标(80%)与现状分开记账。
-          python -m coverage report --fail-under=15
+          # 地板 = 当前实测值（2026-10-28：显示 16%，精确 15.75%）。coverage 按
+          # 四舍五入整数比较，故 16 等价于精确 ≥15.5%，余量 0.25pp。
+          # 注意：CI 绿只代表"没退步"，不代表达到 policy 的 80% 目标。
+          python -m coverage report --fail-under=16
 
       - uses: actions/setup-node@v4
         with:

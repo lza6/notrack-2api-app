@@ -19,12 +19,15 @@ const SCRIPT = path.join(BACKEND_DIR, 'wb_proxy.py');
 
 let backend = null;
 let backendError = '';
+let stderrTail = '';
 let win = null;
 let shuttingDown = false;
 
 function backendUp() {
   return new Promise((resolve) => {
     const tick = (n) => {
+      // 已知 spawn 失败或后端已退出：立刻结束，别再干等 30s。
+      if (backendError) return resolve(false);
       const req = http.get({ host: '127.0.0.1', port: PORT, path: '/health', timeout: 1500 }, (res) => {
         res.resume();
         resolve(res.statusCode === 200);
@@ -63,10 +66,19 @@ function startBackend() {
     try { log('spawn-error')(backendError + '\n'); } catch (e) { /* log dir missing */ }
   });
   backend.stdout.on('data', log('out'));
-  backend.stderr.on('data', log('err'));
+  backend.stderr.on('data', (buf) => {
+    log('err')(buf);
+    // 留最后 1.5KB stderr：后端"起来了但立刻崩"（缺依赖 / Python 版本不对）时，
+    // 失败页要能说出原因，而不是只有一句"后端启动失败"。
+    stderrTail = (stderrTail + String(buf)).slice(-1500);
+  });
   backend.on('exit', (code) => {
     if (!shuttingDown) {
       fs.appendFileSync(logPath, `[exit] code=${code}\n`);
+      if (code !== 0 && !backendError) {
+        const tail = stderrTail.trim().split(String.fromCharCode(10)).slice(-3).join(' | ');
+        backendError = `backend exited with code ${code}` + (tail ? `: ${tail}` : '');
+      }
     }
   });
 }

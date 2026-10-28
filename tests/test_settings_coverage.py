@@ -23,9 +23,9 @@ def d(tmp_path):
 
 def test_limit_defaults_and_set(d):
     import wb_settings
-    val = wb_settings.limit_value(d, "daily_token_limit")
-    assert isinstance(val, (int, float)) or val is None   # 默认值形态
-    wb_settings.set_limit(d, "daily_token_limit", "global", 1234)
+    # 未知 key 读作 0（拼错不能把请求路径卡死）——这是可断言的具体行为
+    assert wb_settings.limit_value(d, "definitely_not_a_limit_key") == 0
+    assert wb_settings.set_limit(d, "daily_token_limit", "global", 1234)["global"] == 1234
     assert wb_settings.limit_value(d, "daily_token_limit") == 1234
 
 
@@ -164,12 +164,22 @@ def test_panel_sessions_revoke_all():
 
 def test_identity_versions_roundtrip(d):
     import wb_settings
-    got = wb_settings.identity_versions(d)
-    assert isinstance(got, dict)
+    # 空配置时返回空覆盖表（而不是拿内置默认值冒充"用户已配置"）
+    assert wb_settings.identity_versions(d) == {}
+    # 走真实写入接口：合法键保留、非法值被拒（不是静默吞掉）
+    wb_settings.set_identity_versions(d, {"desktop_intl": "9.9.9"})
+    assert wb_settings.identity_versions(d) == {"desktop_intl": "9.9.9"}
+    # 未知键不进入覆盖表
+    wb_settings.set_identity_versions(d, {"not_a_real_key": "1.0.0"})
+    assert wb_settings.identity_versions(d) == {}
 
 
-def test_max_concurrent_and_backups_bounds(d):
+def test_keep_backups_clamped_to_max(d):
+    """备份保留数有上限（MAX_KEEP_BACKUPS）：写入超限必须被钳制。"""
     import wb_settings
-    r = wb_settings.max_concurrent_chat(d) if hasattr(wb_settings, "max_concurrent_chat") else None
-    # 版本相关读数允许返回 None；只断言不抛异常即可（避免写死实现细节）
-    assert r is None or isinstance(r, (int, str))
+    assert wb_settings.keep_backups(d) == wb_settings.DEFAULT_KEEP_BACKUPS
+    wb_settings.save(d, {wb_settings.KEEP_BACKUPS_KEY: 999})
+    assert wb_settings.keep_backups(d) <= wb_settings.MAX_KEEP_BACKUPS
+    # 负数按关闭处理（0 = 不做回滚），不能变成负值让下游算出怪结果
+    wb_settings.save(d, {wb_settings.KEEP_BACKUPS_KEY: -5})
+    assert wb_settings.keep_backups(d) >= 0

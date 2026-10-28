@@ -129,12 +129,24 @@ _AGENTS_MODULE = None
 _SERVER_DEPLOYMENT = None
 
 
+_AGENTS_AVAILABLE = [None]   # None=未探测；True/False=已缓存（模块存在性不会变）
+
+
 def agents_available():
-    """wb_agents 是否随包提供（廉价判定，供路由层提前短路）。"""
+    """wb_agents 是否随包提供。
+
+    结果缓存：模块在进程生命周期内不会凭空出现，缺模块时每次重扫 sys.path
+    纯属浪费（`/agents/available` 是看板启动时的判定入口）。
+    """
+    cached = _AGENTS_AVAILABLE[0]
+    if cached is not None:
+        return cached
     try:
-        return agents_module() is not None
+        ok = agents_module() is not None
     except AgentsUnavailable:
-        return False
+        ok = False
+    _AGENTS_AVAILABLE[0] = ok
+    return ok
 
 
 class AgentsUnavailable(RuntimeError):
@@ -18959,8 +18971,9 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/agents/model-selection":
             return self._get_agents_model_selection()
         if path == "/agents/available":
-            # 看板启动时用这个廉价判定决定要不要显示入口：不 import
-            # wb_agents、不做任何探测（issue #246）。
+            # 看板启动时用它决定要不要显示入口。判定 = 来源是本机 且 本发行版
+            # 带 wb_agents；后者需要一次 import 探测（首次 ~250µs，结果被
+            # agents_available() 负缓存，之后是纯内存判断）。
             return self._json(200, {"enabled": self._agents_client_allowed()})
         return self._error(404, "not found", "invalid_request_error")
     def _get_dashboard(self):
@@ -22500,14 +22513,16 @@ class Handler(BaseHTTPRequestHandler):
             payload = self._payload_or_error()
             if payload is None:
                 return
+            # 勾选清单只是数据、不碰本机配置目录，所以远程看板也能保存；
+            # apply / restore 改的是网关所在机器的配置文件，只允许本机操作。
+            # 注意：model-selection 只写 wb_settings，不需要 wb_agents——
+            # 精简发行版必须仍然能保存勾选清单（过度降级会把这条一起挡掉）。
+            if path == "/agents/model-selection":
+                return self._handle_agents_model_selection(payload)
             if not agents_available():
                 return self._json(200, {
                     "ok": False,
                     "msg": "wb_agents module is not bundled in this build"})
-            # 勾选清单只是数据、不碰本机配置目录，所以远程看板也能保存；
-            # apply / restore 改的是网关所在机器的配置文件，只允许本机操作。
-            if path == "/agents/model-selection":
-                return self._handle_agents_model_selection(payload)
             if not self._agents_client_allowed():
                 return self._error(
                     403,

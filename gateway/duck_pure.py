@@ -508,6 +508,33 @@ def _make_session(proxy=None):
         timeout=60)
 
 
+def _close_session(session):
+    """尽力关闭一个 curl_cffi Session；失败不影响主流程。"""
+    try:
+        session.close()
+    except Exception:
+        pass
+
+
+def _apply_pending_rebuild(entry):
+    """把"待重建"的 proxy 落到空闲出口上（换 session 并关闭旧的）。
+
+    只能在 busy=False 时调用：`chat()` 一次请求内会多次读 `entry['session']`
+    （status / POST / 挑战重试 / 自愈重试），中途换掉会让 vqd 挑战与随后的
+    POST 打到不同出口上（旧代理拿的挑战、新代理发请求 → 418），并且旧 session
+    不关闭会泄漏一个 curl handle。
+    """
+    pending = entry.pop('pending_proxy', None)
+    if pending is None and 'pending_proxy' not in entry:
+        return
+    old = entry.get('session')
+    entry['proxy'] = pending
+    entry['session'] = _make_session(pending)
+    entry['last_err'] = ''
+    if old is not None and old is not entry['session']:
+        _close_session(old)
+
+
 class PureDuckPool:
     """纯协议出口池：name -> curl_cffi Session（绑定出口代理）。
 
@@ -607,6 +634,14 @@ class PureDuckPool:
                     out.append({'name': rname, 'proxy': rproxy, 'busy': False,
                                 'last_ok': 0.0, 'last_err': '',
                                 'score': scores.get(rname), 'alive': False})
+            # 已 spawn 但 proxy 变更还没落地的出口：面板要看到"新 proxy + 待生效"，
+            # 否则用户改了代理却在列表里看不到变化。
+            for entry in out:
+                name = entry['name']
+                ex = self._exits.get(name)
+                if ex and 'pending_proxy' in ex:
+                    entry['proxy'] = ex['pending_proxy']
+                    entry['rebuilding'] = True
             return out
 
     def register_exit(self, name, proxy=None, panel=False):
@@ -620,15 +655,18 @@ class PureDuckPool:
     def upsert_exit(self, name, proxy=None):
         with self._lock:
             e = self._exits.get(name)
-            if e and e['proxy'] == proxy:
+            if e and e['proxy'] == proxy and 'pending_proxy' not in e:
                 return
             if e is not None:
-                # 已 spawn 的出口换 proxy：立刻换 session，否则内存会继续走旧出口
-                # 而盘上已是新值（重启才生效 —— 复验发现的 P3）。
-                e['proxy'] = proxy
-                e['session'] = _make_session(proxy)
-                e['last_err'] = ''
-                self.log("exit %s: proxy changed -> session rebuilt" % name)
+                if e.get('busy'):
+                    # 在途请求正在用旧 session：此刻替换会让 vqd 挑战与 POST
+                    # 打到不同出口。标记待重建，由 _pick（必然 busy=False）应用。
+                    e['pending_proxy'] = proxy
+                    self.log("exit %s: proxy change deferred (busy)" % name)
+                else:
+                    e['pending_proxy'] = proxy
+                    _apply_pending_rebuild(e)
+                    self.log("exit %s: proxy changed -> session rebuilt" % name)
             self._registered[name] = proxy
             self._panel_registered.add(name)
         self._persist()
@@ -662,6 +700,8 @@ class PureDuckPool:
                     idle.sort(key=lambda e: (-exit_score.BOARD.score_of(e['name']),
                                              self._rr))
                     e = idle[0]
+                    if 'pending_proxy' in e:
+                        _apply_pending_rebuild(e)
                     self._rr += 1
                     e['busy'] = True
                     return e
