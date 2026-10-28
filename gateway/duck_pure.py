@@ -499,6 +499,15 @@ def chat_stream_via_session(session, model, messages, exit_proxy=None):
 
 # ── 出口池（curl_cffi session 轮换；与 DuckClientPool 接口兼容） ─────────
 
+def _make_session(proxy=None):
+    """按出口 proxy 建一个 curl_cffi Session（spawn 与换 proxy 重建共用）。"""
+    return creq.Session(
+        impersonate=IMPERSONATE,
+        proxies=({'http': _normalize_proxy(proxy),
+                  'https': _normalize_proxy(proxy)} if proxy else None),
+        timeout=60)
+
+
 class PureDuckPool:
     """纯协议出口池：name -> curl_cffi Session（绑定出口代理）。
 
@@ -613,6 +622,13 @@ class PureDuckPool:
             e = self._exits.get(name)
             if e and e['proxy'] == proxy:
                 return
+            if e is not None:
+                # 已 spawn 的出口换 proxy：立刻换 session，否则内存会继续走旧出口
+                # 而盘上已是新值（重启才生效 —— 复验发现的 P3）。
+                e['proxy'] = proxy
+                e['session'] = _make_session(proxy)
+                e['last_err'] = ''
+                self.log("exit %s: proxy changed -> session rebuilt" % name)
             self._registered[name] = proxy
             self._panel_registered.add(name)
         self._persist()
@@ -637,11 +653,7 @@ class PureDuckPool:
                         self._exits[rname] = {
                             'name': rname, 'proxy': rproxy, 'busy': False,
                             'last_ok': 0.0, 'last_err': '',
-                            'session': creq.Session(
-                                impersonate=IMPERSONATE,
-                                proxies=({'http': _normalize_proxy(rproxy),
-                                          'https': _normalize_proxy(rproxy)} if rproxy else None),
-                                timeout=60),
+                            'session': _make_session(rproxy),
                         }
                 idle = [e for e in self._exits.values() if not e['busy']]
                 if idle:

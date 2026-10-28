@@ -38,3 +38,8 @@ tools/mihomo/duck_ok_nodes.json
 gateway/.fe-version-cache.json
 tmp_audit_usage/
 tmp_audit_accounts/
+
+# 覆盖率产物
+.coverage
+.coverage.*
+htmlcov/

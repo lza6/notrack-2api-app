@@ -33,12 +33,16 @@
 | 空完成守护（502 接线） | unit | passed | 2026-10-28 | v1.9.3 审查 R1/R2/R5 | tests/test_empty_completion_wiring.py 5 例（含 usage/outcome/上游错误透传/close/content_filter） |
 | 自愈集成语义 | unit | passed | 2026-10-28 | v1.9.3 审查 S1/S2/R4/R5 | tests/test_fe_version_heal.py 6 例（单飞/失败退避/时间戳防降级/接线/放弃/异常不传播） |
 | 出口持久化（C1 回归） | unit | passed | 2026-10-28 | v1.9.3 审查 C1 | tests/test_exit_persist.py 7 例（含 spawn 后不丢项） |
+| 出口换 proxy 生效 | unit | passed | 2026-10-28 | v1.9.4 P3 | tests/test_exit_proxy_switch.py 3 例 |
+| responses/messages 空产出守护 | unit | passed | 2026-10-28 | v1.9.4 R3 | tests/test_empty_guard_r3.py 4 例 |
+| wb_settings 覆盖补强 | unit | passed | 2026-10-28 | v1.9.4 | tests/test_settings_coverage.py 16 例（32%→41%） |
 | /updates shim 安全 | unit | passed | 2026-10-28 | v1.9.1 P0 | tests/test_updates_stub.py 2 例 |
 | 鉴权四态 | integration(e2e) | passed | 2026-10-28 | — | evidence/T-AUTH.json |
 | 真实上游对话（流式/非流式） | e2e | passed | 2026-10-28 | v1.9.3 P1 | evidence/T-CHAT.json |
 | 桌面 exe 真机 | e2e | passed | 2026-10-28 | v1.9.1 | evidence/T-DESKTOP.json |
 | 压测（只读端点 + 错误路径） | load | passed | 2026-10-28 | — | evidence/T-PERF.json |
-| 覆盖率 | — | **未测量** | — | — | coverage 未安装；不得宣称达标 |
+| 覆盖率（行） | measured | **16%** | 2026-10-28 | v1.9.4 | `coverage run --source=gateway -m pytest` → TOTAL 16%（22279/18809）；门禁目标 80% **未达标** |
+| 覆盖率（分支） | — | 未测量 | — | — | 需 `coverage run --branch`，本轮未启用 |
 | 单元测试总数 | unit | passed | 2026-10-28 | v1.9.3 | `python -m pytest tests/ -q` → **63 passed** |
 
 ## 未覆盖（诚实登记）
@@ -50,5 +54,5 @@
 | 出口真实代理连通性 | 需可用代理节点 | 出口质量评分只有单测 + 局部 E2E |
 | Electron 换机打包 | 需干净 PATH 环境 | pythonw 依赖目标机 PATH 的假设未验证 |
 | dashboard 浏览器真实点击 | 本环境无 Playwright MCP 会话 | 仅静态确认 + HTTP 200 + JS 片段检查 |
-| `/v1/responses`、`/v1/messages` 空产出守护 | 需 WorkBuddy 账号，本环境 0 账号（返回 503/502 no usable account） | 守护代码已接线但端到端未验证，只有静态确认 |
+| `/v1/responses`、`/v1/messages` 端到端 | 需 WorkBuddy 账号，本环境 0 账号 | **决策级接线已有单测（4 例）**；真实上游端到端仍未验证 |
 | 换机打包（干净 PATH） | 无干净环境 | pythonw.exe 依赖目标机 PATH 的假设未验证 |

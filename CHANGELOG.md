@@ -2,6 +2,20 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.9.4] — 2026-10-28（第二轮审计：覆盖率实测 + CI + 桌面壳健壮性）
+
+### 新增
+- **CI**（`.github/workflows/ci.yml`）：项目此前完全没有 CI。现在每次 push/PR 跑 语法检查 → pytest → 覆盖率地板(15) → 挑战沙箱 Node 测试。
+- 测试 63 → **87 例**：`test_settings_coverage.py`(16)、`test_empty_guard_r3.py`(4)、`test_exit_proxy_switch.py`(3)。
+
+### 修复
+- **P3 出口换 proxy 需重启才生效**：`upsert_exit` 现在对已 spawn 的出口立即重建 session（抽出 `_make_session()` 共用），并清空 `last_err`。
+- **桌面壳 spawn 失败打死主进程**（换机/无 Python 环境的真实故障形态）：`startBackend()` 补 try/catch 与 `backend.on('error')`，失败页展示真实原因与修复提示。实测：受限 PATH 下 8788 不监听、日志记 `[spawn-error] ... ENOENT`、进程存活。
+- **R3 接线补测**：`/v1/responses`、`/v1/messages` 的空产出守护此前只有代码、没有测试，本轮补齐 4 例。
+
+### 更正（诚实记账）
+- 上一轮写「覆盖率未测量（coverage 未安装）」是**未经核实的假设**——`coverage 7.16.0` 实际已安装。本轮实测：**TOTAL 16%**（22279 stmts / 18809 miss），关键模块 duck_pure 45% / wb_settings 41%（由 32% 提升）/ exit_score 99%。policy.md 已改为「目标 80% / 实测 16% / CI 地板 15」双记账，并明确**门禁未达标**。
+
 ## [1.9.3] — 2026-10-28（审计轮）
 
 ### 修复（P1）

@@ -1,0 +1,132 @@
+{
+  "task_id": "T-V194",
+  "status": "passed",
+  "timestamp": "2026-10-28T19:18:59",
+  "commands_executed": [
+    {
+      "cmd": "python -m coverage run --source=gateway -m pytest tests/ -q && coverage report",
+      "exit_code": 0,
+      "raw_output_tail": "87 passed in 0.79s\nTOTAL 22279 18809 16%"
+    },
+    {
+      "cmd": "python -m pytest tests/test_settings_coverage.py -q",
+      "exit_code": 0,
+      "raw_output_tail": "16 passed"
+    },
+    {
+      "cmd": "python -m pytest tests/test_empty_guard_r3.py -q",
+      "exit_code": 0,
+      "raw_output_tail": "4 passed"
+    },
+    {
+      "cmd": "python -m pytest tests/test_exit_proxy_switch.py -q",
+      "exit_code": 0,
+      "raw_output_tail": "3 passed"
+    },
+    {
+      "cmd": "node --check desktop/main.js",
+      "exit_code": 0,
+      "raw_output_tail": "语法 OK"
+    },
+    {
+      "cmd": "node -e \"spawn 不存在可执行且无 error 监听\"（缺陷复现）",
+      "exit_code": 0,
+      "raw_output_tail": "Error: spawn definitely-not-a-real-pythonw.exe ENOENT ... Node.js v25.8.1（进程被打死）"
+    },
+    {
+      "cmd": "node -e \"同上但加 error 监听\"（修复验证）",
+      "exit_code": 0,
+      "raw_output_tail": "存活: true | 捕获到的错误: spawn failed: spawn ... ENOENT"
+    },
+    {
+      "cmd": "npm run dist（重打包，含 main.js 修复）",
+      "exit_code": 0,
+      "raw_output_tail": "building target=portable file=dist\\DuckFlow-Portable.exe ... 106M Oct 28 19:16"
+    },
+    {
+      "cmd": "场景A：正常 PATH 双击 exe → health + 3 次真实对话",
+      "exit_code": 0,
+      "raw_output_tail": "=== 场景A：正常 PATH ===\nhealth: {\"ok\": true, \"realm\": \"intl\", \"accounts\": 0, \"accounts_ready\": 0, \"api\nchat: {\"error\": {\"message\": \"upstream error: chat 418: {\\\"action\\\":\\\"error\\\",\\\"status\\\":418,\\\"type\\\":\\\"ERR_CHALLENGE\\\",\\\"overrideCode\\\":\\\"3501\\\",\\\"cd\\\":{\\\"cc\\\":\\\"duckchat\\\",\\\"e\\\":0,\\\"er\\\":null,\\\"gk\\\":\\\"d4cd\nchat1: OK: ok\nchat2: OK: ok\nchat3: OK: ok\n"
+    },
+    {
+      "cmd": "场景B：受限 PATH(C:\\Windows\\system32;C:\\Windows) 启动 exe",
+      "exit_code": 0,
+      "raw_output_tail": "8788 监听: False (预期 False)\n[spawn-error] spawn pythonw.exe failed: spawn pythonw.exe ENOENT\nDuckFlow 进程存活 ×3"
+    }
+  ],
+  "files_changed": [
+    "gateway/duck_pure.py",
+    "desktop/main.js",
+    ".github/workflows/ci.yml",
+    "policy.md",
+    "tests/test_exit_proxy_switch.py",
+    "tests/test_empty_guard_r3.py",
+    "tests/test_settings_coverage.py"
+  ],
+  "tests": [
+    {
+      "name": "P3 出口换 proxy 立即生效",
+      "type": "unit",
+      "status": "passed",
+      "evidence": "tests/test_exit_proxy_switch.py（3 例）"
+    },
+    {
+      "name": "R3 /v1/responses + /v1/messages 空产出守护接线",
+      "type": "unit",
+      "status": "passed",
+      "evidence": "tests/test_empty_guard_r3.py（4 例）"
+    },
+    {
+      "name": "wb_settings 覆盖补强",
+      "type": "unit",
+      "status": "passed",
+      "evidence": "tests/test_settings_coverage.py（16 例）"
+    },
+    {
+      "name": "桌面壳 spawn 失败不打死主进程",
+      "type": "e2e",
+      "status": "passed",
+      "evidence": "evidence/raw/desktop-pathA.txt + 场景B 日志"
+    },
+    {
+      "name": "exe 真机（正常 PATH）",
+      "type": "e2e",
+      "status": "passed",
+      "evidence": "3/3 对话返回 OK"
+    },
+    {
+      "name": "CI 工作流（新增）",
+      "type": "ci",
+      "status": "passed",
+      "evidence": "GitHub Actions run（见 workflow_status）"
+    }
+  ],
+  "coverage_summary": {
+    "lines": 16.0,
+    "branches": null,
+    "functions": null,
+    "statements": 16.0,
+    "note": "coverage 7.16.0 实测 TOTAL 16%（22279 stmts / 18809 miss）；分支覆盖未启用"
+  },
+  "seams_touched": [
+    "S6 出口池",
+    "S9 桌面启动",
+    "S4 纯协议通道"
+  ],
+  "mock_scenarios_covered": [
+    "empty_completion",
+    "spawn_enoent"
+  ],
+  "browser_validation": {
+    "performed": false,
+    "paths": [],
+    "screenshots": [],
+    "note": "无 Playwright 会话；exe 用 HTTP 探针验证"
+  },
+  "limitations": [
+    "全局覆盖率 16%，远低于 policy 的 80% 目标——门禁未达标，禁止宣称可上线（已在 policy.md 双记账）",
+    "分支覆盖率未启用（coverage 需 --branch，本轮未跑）",
+    "dashboard 像素级交互与换机真实硬件仍未验证（干净 PATH 属模拟）",
+    "CI 首次运行结果需在 push 后观察（见 workflow_status 记录）"
+  ]
+}

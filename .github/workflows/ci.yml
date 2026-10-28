@@ -1,0 +1,43 @@
+name: CI
+
+# 本项目此前没有 CI（审计矩阵第 13 项缺口）。这里做最小但真实的三件事：
+# 语法检查 → 单元测试 → 覆盖率地板（no-regression），外加挑战沙箱的 Node 测试。
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Syntax check
+        run: python -m py_compile gateway/*.py wb_proxy.py
+
+      - name: Unit tests
+        run: python -m pytest tests/ -q
+
+      - name: Coverage (no-regression floor)
+        run: |
+          python -m coverage run --source=gateway -m pytest tests/ -q
+          python -m coverage report --sort=cover
+          # 地板值 = 当前实测下限（2026-10-28 实测 16%）。门槛只允许上调，
+          # 见 policy.md「覆盖率门禁」——把目标(80%)与现状分开记账。
+          python -m coverage report --fail-under=15
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Challenge sandbox fingerprint surface
+        run: node tests/test_fingerprint_surface.mjs

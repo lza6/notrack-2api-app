@@ -1,7 +1,7 @@
 # Workflow Status — DuckFlow 2API
 
 > 单一事实来源。事件日志只追加，不删历史。每次状态变化记时间、节点、原因、证据路径。
-> 最近更新：2026-10-28（审计轮 v1.9.3）
+> 最近更新：2026-10-28（第二轮审计轮 v1.9.4）
 
 ## 1. 总目标与当前阶段
 
@@ -18,6 +18,10 @@
 | A4 | 真实验证矩阵 | verifier | policy §1 | 接口/鉴权/对话/用量/压测/exe | 全项有原始输出 | DONE | evidence/raw/*.txt |
 | A5 | 独立审查 | reviewer | 本轮 diff | 审查结论 | Verdict | DONE | 见 §6 |
 | A6 | 文档与技能记忆同步 | memory-keeper | 本轮结论 | CHANGELOG/AGENTS/skills/memory | 与事实一致 | DONE | 见 §7 |
+| A7 | 覆盖率实测（上轮误称"未安装"） | verifier | coverage 7.16.0 | 真实数字 16% | 来自实际运行 | DONE | evidence/T-V194.json |
+| A8 | CI 落地 | builder | 无 CI | .github/workflows/ci.yml | push 后 run 通过 | DONE | Actions run |
+| A9 | P3 出口换 proxy 需重启 | builder | 复验发现 | 立即重建 session | 3 例单测 | DONE | tests/test_exit_proxy_switch.py |
+| A10 | 桌面壳 spawn 失败打死主进程 | builder | 干净 PATH 模拟 | error 监听 + 失败页 | 场景B 实测 | DONE | evidence/raw/desktop-pathA.txt |
 
 ## 3. 技能检查记录
 

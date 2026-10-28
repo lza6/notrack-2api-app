@@ -137,6 +137,10 @@ cd desktop; npm run dist                        # 打包（自动跑 pre-dist.ps
 
 基线（本机）：并发 50 打 `/health` → QPS ~1790，P95 20ms，0 错误（见 `.agent/memory/optimization-log.md`）。
 
+**CI**：每次 push/PR 跑语法检查 → pytest（87 例）→ 覆盖率地板 → 挑战沙箱 Node 测试（`.github/workflows/ci.yml`）。
+**覆盖率现状（2026-10-28 实测）**：`--source=gateway` 行覆盖 **16%**（duck_pure 45% / wb_settings 41% / exit_score 99%）。
+policy 目标 80% **尚未达标**，缺口按模块登记在 `test_ledger.md`；`wb_proxy.py`（13k 行巨石）的缺口属结构性债务。
+
 ## 免密说明
 本机（127.0.0.1）访问且未设置面板密码时自动直进。设置密码后恢复令牌校验。
 API Key 与面板密码相互独立：API Key 只管 `/v1` 调用鉴权。

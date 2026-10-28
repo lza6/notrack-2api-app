@@ -1,0 +1,6 @@
+=== 场景A：正常 PATH ===
+health: {"ok": true, "realm": "intl", "accounts": 0, "accounts_ready": 0, "api
+chat: {"error": {"message": "upstream error: chat 418: {\"action\":\"error\",\"status\":418,\"type\":\"ERR_CHALLENGE\",\"overrideCode\":\"3501\",\"cd\":{\"cc\":\"duckchat\",\"e\":0,\"er\":null,\"gk\":\"d4cd
+chat1: OK: ok
+chat2: OK: ok
+chat3: OK: ok

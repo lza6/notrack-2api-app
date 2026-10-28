@@ -18,6 +18,7 @@ const PY_EXE = 'pythonw.exe';
 const SCRIPT = path.join(BACKEND_DIR, 'wb_proxy.py');
 
 let backend = null;
+let backendError = '';
 let win = null;
 let shuttingDown = false;
 
@@ -40,15 +41,27 @@ function backendUp() {
 
 function startBackend() {
   const args = [SCRIPT, '--port', String(PORT)];  // 免密：不传 panel-password，本机直进
-  backend = spawn(PY_EXE, args, {
-    cwd: BACKEND_DIR,
-    windowsHide: true,
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
   const logPath = path.join(app.getPath('userData'), 'backend.log');
   const log = (tag) => (buf) => {
     fs.appendFileSync(logPath, `[${tag}] ${buf}`);
   };
+  try {
+    backend = spawn(PY_EXE, args, {
+      cwd: BACKEND_DIR,
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+  } catch (err) {
+    backendError = `spawn ${PY_EXE} failed: ${err && err.message}`;
+    try { log('spawn-error')(backendError + '\n'); } catch (e) { /* log dir missing */ }
+    return;
+  }
+  // 关键：spawn 找不到可执行文件时错误是**异步 error 事件**——没有监听会抛
+  // 未捕获异常、直接打死 Electron 主进程（换机/无 Python 环境的真实故障形态）。
+  backend.on('error', (err) => {
+    backendError = `spawn ${PY_EXE} failed: ${err && err.message}`;
+    try { log('spawn-error')(backendError + '\n'); } catch (e) { /* log dir missing */ }
+  });
   backend.stdout.on('data', log('out'));
   backend.stderr.on('data', log('err'));
   backend.on('exit', (code) => {
@@ -85,7 +98,13 @@ async function createWindow() {
   if (!up) {
     win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(
       '<body style="font-family:sans-serif;background:#efebe0;display:flex;align-items:center;justify-content:center;height:92vh;flex-direction:column;color:#1f1e1b">' +
-      '<h2>后端启动失败</h2><p>查看日志: ' + app.getPath('userData') + '\\backend.log</p></body>'));
+      '<h2>后端启动失败</h2>' +
+      (backendError
+        ? '<p style="color:#b91c1c;max-width:640px;text-align:center">' + backendError +
+          '<br>这台机器上没有可用的 pythonw.exe。请安装 Python 3.10+ 并加入 PATH。' +
+          '</p>'
+        : '') +
+      '<p>查看日志: ' + app.getPath('userData') + '\\backend.log</p></body>'));
     return;
   }
   await win.loadURL(`http://127.0.0.1:${PORT}/?pwd=admin`);
