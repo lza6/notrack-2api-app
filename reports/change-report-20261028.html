@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>DuckFlow 2API 变更报告 — 2026-10-28 审计轮</title>
+<style>
+body{font-family:"Microsoft YaHei",sans-serif;max-width:960px;margin:0 auto;padding:24px;color:#1f1e1b;background:#faf8f4;line-height:1.7}
+h1{border-bottom:3px solid #8b6f47;padding-bottom:8px}
+h2{color:#6b4f2a;margin-top:32px;border-left:4px solid #8b6f47;padding-left:10px}
+table{border-collapse:collapse;width:100%;margin:12px 0;font-size:14px}
+th,td{border:1px solid #d8cfc0;padding:6px 10px;text-align:left}
+th{background:#efe7d8}
+.ok{color:#1a7f37;font-weight:bold}.warn{color:#b45309}.bad{color:#b91c1c}
+code{background:#efe7d8;padding:1px 5px;border-radius:3px;font-size:13px}
+.quiz{background:#fff;border:1px solid #d8cfc0;border-radius:8px;padding:16px;margin-top:16px}
+.answer{color:#555;font-size:13px;margin-top:24px;padding-top:12px;border-top:1px dashed #ccc}
+</style>
+</head>
+<body>
+<h1>DuckFlow 2API 变更报告 — 全量审计轮（2026-10-28）</h1>
+
+<h2>上下文：为什么做这次变更</h2>
+<p>Phase B（v1.9.0，B1–B4）交付后，用户下达全量审计令：把项目当"即将交付的真实产品"重新审计——计划文档闭环判定、backend 双拷贝 drift、鉴权疑云复验、文档清理、技能记忆沉淀。本轮审计从 <code>docs/计划书/下一步改进指南.md</code> 的 24 项任务台账出发，逐项对照真实代码与运行证据。</p>
+
+<h2>直觉：关键决策与取舍</h2>
+<ul>
+<li><b>backend 单源化（方案B）优先级最高</b>：drift 已实锤（backend 缺 exit_score.py 等 4 提交量），任何一天打 exe 都会静默产出残缺桌面版——这是唯一"必然发生"的故障，先于一切增强。</li>
+<li><b>鉴权疑云不急于改码</b>：401/200"两说"最可能是两种部署态。先取证（git 考古 bfc7906 + 真机 curl 矩阵），裁定后只修了注释矛盾——避免为一个"伪 P0"引入真实回归。</li>
+<li><b>真机打包才发现 P0</b>：<code>/updates</code> 端点在 shim 态崩 <code>AttributeError: NoneType.update</code>——单测全绿也测不出（shim 只在 exe 环境触发）。这再次验证"打包类改动必须真机跑 exe"门禁的价值。</li>
+</ul>
+
+<h2>做了什么</h2>
+<table>
+<tr><th>类别</th><th>内容</th><th>提交</th></tr>
+<tr><td>P1-1 单源化</td><td>backend/ 27 文件删除；main.js 改指根薄壳（开发态/打包态双布局探测）；extraResources 打 wb_proxy.py + gateway/**（排除 __pycache__/challenge_js.js/*.pyc）</td><td><code>68d4a2c</code></td></tr>
+<tr><td>P0 修复</td><td><code>_get_updates</code> 与手动检查路径：shim 态 <code>UPDATES.status()</code>/<code>check()</code> 返回 None → <code>dict.update(None)</code> 崩；统一 <code>or {}</code> 兜底 + 2 例回归测试</td><td><code>68d4a2c</code></td></tr>
+<tr><td>P1-5 gitignore</td><td>补 desktop/node_modules、desktop/dist、electron_dev.log、tools/mihomo 运行态 json、*.pyc；删 backend/ 裸规则</td><td><code>68d4a2c</code></td></tr>
+<tr><td>P1-2 裁定</td><td>401/200 两说=配key/未配key 两态，皆实证；修 <code>_is_panel_route</code> 自相矛盾注释</td><td><code>aaf2b8e</code></td></tr>
+<tr><td>v1.2 冒烟</td><td>tools/smoke.ps1：态感知鉴权断言（含 valid key 自动从 settings.json 读取），三端口实测 ALL PASS</td><td><code>aaf2b8e</code></td></tr>
+<tr><td>bind 审计</td><td>exe 默认绑 127.0.0.1（netstat 实证）；外网卡 192.168.1.2 探测超时不可达；--lan 强制随机 key（静态确认）</td><td><code>aaf2b8e</code></td></tr>
+<tr><td>文档归档</td><td>计划指南 24 任务判定（11 闭环/3 过时/2 不适用/8 已拍板）→ archive + manifest；未闭环项提炼至 known-issues.md</td><td><code>8582473</code></td></tr>
+<tr><td>记忆同步</td><td>known-issues 关单 4 项、tested-scope +5 条证据、project_specs 状态段更新</td><td><code>8582473</code></td></tr>
+</table>
+
+<h2>架构/链路图（变更后）</h2>
+<pre>
+开发态:  python wb_proxy.py (根薄壳, sys.path→gateway/)
+           └→ gateway/wb_proxy.py (主体) + gateway/*.{py,mjs,html}
+
+桌面态:  DuckFlow-Portable.exe (Electron)
+           ├→ spawn pythonw.exe resources/app.asar.unpacked/wb_proxy.py
+           │    └→ app.asar.unpacked/gateway/**   ← 单一权威源，与开发态同一份
+           └→ BrowserWindow → http://127.0.0.1:8788/  (免密: 回环+默认密码)
+
+打包:    desktop/package.json extraResources: 根 .. → app.asar.unpacked
+         filter: wb_proxy.py, gateway/**, 排除运行时快照
+</pre>
+
+<h2>验证证据</h2>
+<table>
+<tr><th>验证项</th><th>命令</th><th>结果</th></tr>
+<tr><td>单元测试</td><td><code>python -m pytest tests/</code></td><td class="ok">29/29 通过</td></tr>
+<tr><td>Node 指纹面</td><td><code>node tests/test_fingerprint_surface.mjs</code></td><td class="ok">10/10 ALL PASS</td></tr>
+<tr><td>语法编译</td><td><code>python -m py_compile gateway/*.py wb_proxy.py</code></td><td class="ok">ALL OK</td></tr>
+<tr><td>打包</td><td><code>cd desktop && npm run dist</code></td><td class="ok">两次成功，exe 时间戳 07:47 更新</td></tr>
+<tr><td>真机 exe</td><td>双击 exe → curl /health /updates /v1/chat</td><td class="ok">200 / 200(修复后) / 真实对话 200</td></tr>
+<tr><td>冒烟脚本</td><td><code>powershell -File tools/smoke.ps1 -Port 18877/18879/18881</code></td><td class="ok">三轮 ALL PASS</td></tr>
+<tr><td>鉴权四态</td><td>curl wrong/no/valid key + models no-key</td><td class="ok">401/401/200/401（配 key 态）</td></tr>
+<tr><td>bind 审计</td><td>netstat + 外网卡 urllib 探测</td><td class="ok">127.0.0.1 only；外网卡超时</td></tr>
+<tr><td>git 卫生</td><td><code>git status -s</code></td><td class="ok">仅剩 gitignore 后预期干净态</td></tr>
+</table>
+
+<h2>风险与回滚</h2>
+<table>
+<tr><th>风险</th><th>缓解</th><th>回滚</th></tr>
+<tr><td>单源化后打包资源路径错</td><td>main.js 双布局探测（RES_ROOT 优先、APP_ROOT 兜底）+ 真机验证已过</td><td><code>git revert 68d4a2c</code> + 恢复 backend 拷贝</td></tr>
+<tr><td>/updates 修复面不完整</td><td>全库 grep <code>wb_update_request</code>/<code>UPDATES</code> 消费点逐一核（4 处）+ 回归测试</td><td>revert 单提交</td></tr>
+<tr><td>gitignore 收紧误伤</td><td><code>git status</code>/check-ignore 逐项核对</td><td>revert .gitignore</td></tr>
+</table>
+
+<h2>已知限制</h2>
+<ul>
+<li>x-fe-version 漂移自愈（known#4）、EBUSY 脚本化（known#6）、mihomo 哈希校验（known#7）、dashboard score 展示（known#8）——均为 P2，已登记待办。</li>
+<li>B5 巨石拆分未实施（docs/plan-b5-split.md 待批）。</li>
+<li>exe 真机验证在本机完成；"换机打包"（干净 PATH 场景）未模拟，pythonw.exe 依赖目标机 PATH 的假设未变。</li>
+</ul>
+
+<div class="quiz">
+<h2>底部测验</h2>
+<p><b>Q1（选择）</b>：exe 打包后网关源码从哪里加载？<br>
+A. resources/backend/　B. resources/app.asar.unpacked/gateway/　C. asar 包内　D. 仓库根</p>
+<p><b>Q2（判断）</b>：本机回环+未设密码时，/v1/chat 无 key 也能调用，即使部署配了 enabled key。</p>
+<p><b>Q3（简答）</b>：<code>_get_updates</code> 的 AttributeError 根因是什么？为什么 pytest 冒烟套件没拦住？</p>
+<p><b>Q4（选择）</b>：/v1/models 在配了 key 的部署上无 key 访问，正确状态码是？<br>
+A. 200（模型发现豁免）　B. 401　C. 404　D. 403</p>
+<p><b>Q5（简答）</b>：删除 backend/ 拷贝前必须完成哪两步验证？</p>
+<div class="answer">
+<p><b>答案</b>：Q1=B（main.js 双布局探测 RES_ROOT 优先）。Q2=错（bfc7906：免密不豁免 /v1 key 校验，实测 401）。Q3=wb_updates 被替换为 _DuckShim（可调用返回 None），<code>UpdateChecker()</code> 返回 truthy 的 shim 实例但 <code>status()</code>/<code>check()</code> 返回 None，<code>payload.update(None)</code> 崩；pytest 冒烟用模块导入态 stub 为 <code>SimpleNamespace(status=lambda:{})</code>，与 exe 运行态（_DuckShim）不同，故单测绿而真机崩——教训：stub 必须复刻运行时真实形态。Q4=B（bfc7906 后 /v1/models 与其它 /v1 路由一样过 _authorized()）。Q5=①grep 全库确认 desktop/main.js 无 backend 源码路径引用；②真机打包+双击 exe 全链路冒烟通过。</p>
+<p><b>自测</b>：5/5 = 100% ≥ 80% 通过线 ✅（2026-10-28，主控作答并对照实现核验）</p>
+</div>
+</div>
+
+<p style="margin-top:32px;color:#888;font-size:12px">Generated 2026-10-28 · commits 68d4a2c / aaf2b8e / 8582473 · push main → release 待本轮收尾</p>
+</body>
+</html>
