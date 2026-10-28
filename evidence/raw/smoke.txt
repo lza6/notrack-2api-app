@@ -1,0 +1,9 @@
+== 冒烟断言 ==
+ok   health -> 200
+ok   panel status -> 200
+ok   dashboard -> 200
+info 服务未配 key：校验开放路径
+ok   chat no-auth 200 -> 200
+ok   models no-key 200（模型发现不锁key） -> 200
+
+ALL PASS

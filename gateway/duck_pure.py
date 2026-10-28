@@ -45,9 +45,24 @@ _DIR = os.path.dirname(os.path.abspath(__file__))
 # 进程内存热更新 + 落盘缓存（下次启动直接用新值，不用再等一次失败）。
 _FE_VERSION_LOCK = threading.Lock()
 _FE_VERSION_STATE = {"value": _FE_VERSION_PREFIX, "refreshed_at": 0.0,
-                     "last_error": "", "source": "builtin"}
+                     "last_error": "", "source": "builtin", "failures": 0}
 _FE_VERSION_CACHE = os.path.join(_DIR, ".fe-version-cache.json")
-_FE_VERSION_MIN_INTERVAL = 600.0   # 自愈抓取最小间隔（秒），防抖
+_FE_VERSION_MIN_INTERVAL = 600.0       # 成功/确认后的最小重抓间隔（秒）
+_FE_VERSION_FAILURE_BACKOFF = 60.0     # 失败后的重试退避（秒）——别让一次超时哑火 10 分钟
+_FE_VERSION_FETCH_TIMEOUT = 15.0       # 抓首页的独立超时（秒），不沿用出口 session 的 60s
+_FE_VERSION_TOKEN_RE = re.compile(r'serp_(\d{8})_(\d{6})_([A-Za-z0-9]{2,})(?:-([A-Za-z0-9]+))?')
+# 单飞闸：同一时刻只允许一个线程抓首页，避免并发重复抓取与互相覆盖。
+_FE_REFRESHING = threading.Lock()
+
+# 请求头后缀：真实客户端形如 `<serp>_<hash>-dev`，本网关沿用同一形态。
+FE_VERSION_SUFFIX = '-dev'
+
+
+def self_log():
+    """模块级调试日志（DUCK_PURE_TRACE 开关），自愈路径用。"""
+    if os.environ.get("DUCK_PURE_TRACE"):
+        return lambda m: print("[duck-pure] " + str(m), flush=True)
+    return None
 
 
 def current_fe_version() -> str:
@@ -60,45 +75,92 @@ def fe_version_status() -> dict:
         return dict(_FE_VERSION_STATE)
 
 
-def refresh_fe_version(session=None, force: bool = False, log=None) -> bool:
-    """从 duck.ai 首页抓最新 serp_* 版本串并热更。成功返回 True。
+def _fe_token_stamp(token):
+    """`serp_YYYYMMDD_HHMMSS_...` → (date, time) 可比较元组；不匹配返回 None。"""
+    m = _FE_VERSION_TOKEN_RE.match(str(token or ""))
+    if not m:
+        return None
+    return (m.group(1), m.group(2))
 
-    - 有缓存文件且未过期（force=False 时受最小间隔约束）优先用缓存；
-    - 抓取失败静默保留旧值（调用方的 418 重试逻辑不受影响）。
+
+def refresh_fe_version(session=None, force: bool = False, log=None) -> bool:
+    """从 duck.ai 首页抓最新 serp_* 版本串并热更。值变化并已写入时返回 True。
+
+    关键口径：
+    - 防抖：成功/确认后 600s 内不再抓；**失败只退避 60s**（一次瞬时超时不该让
+      自愈哑火十分钟）；
+    - 单飞：`_FE_REFRESHING` 非阻塞获取，拿不到说明别的线程正在抓，直接返回 False；
+    - 抓取超时独立（15s），不沿用出口 session 的 60s——此时外层请求已经在失败路径上；
+    - 防降级：只允许换成**时间戳不更旧**的值；互为前缀时保留更长（带 build hash）的；
+    - 失败只记 `last_error`，绝不向调用方抛异常。
     """
     now = time.time()
     with _FE_VERSION_LOCK:
-        if not force and now - _FE_VERSION_STATE["refreshed_at"] < _FE_VERSION_MIN_INTERVAL:
+        st = _FE_VERSION_STATE
+        waiting = (now - st["refreshed_at"]) < (
+            _FE_VERSION_FAILURE_BACKOFF if st["failures"] else _FE_VERSION_MIN_INTERVAL)
+        if not force and st["last_error"] and st["failures"] and waiting:
             return False
+        if not force and not st["last_error"] and waiting:
+            return False
+    acquired = False
+    if not force:
+        if not _FE_REFRESHING.acquire(blocking=False):
+            return False   # 另一个线程正在抓
+        acquired = True
     try:
-        s = session or creq.Session(impersonate=IMPERSONATE, timeout=20)
-        r = s.get("https://duck.ai/", headers={"User-Agent": UA})
-        if r.status_code != 200:
-            raise RuntimeError("status %s" % r.status_code)
-        m = re.search(r'serp_\d{8}_\d{6}_[A-Za-z0-9_-]{20,}', r.text)
-        if not m:
-            raise RuntimeError("no serp_* token in homepage")
-        fresh = m.group(0)
-        if fresh == current_fe_version():
-            with _FE_VERSION_LOCK:
-                _FE_VERSION_STATE.update({"refreshed_at": now, "last_error": "",
-                                          "source": "confirmed"})
-            return False   # 没变，但确认了当前值仍有效
-        with _FE_VERSION_LOCK:
-            _FE_VERSION_STATE.update({"value": fresh, "refreshed_at": now,
-                                      "last_error": "", "source": "self-healed"})
         try:
-            with open(_FE_VERSION_CACHE, "w", encoding="utf-8") as fh:
-                json.dump({"value": fresh, "at": now}, fh)
-        except OSError:
-            pass
-        if log:
-            log("x-fe-version self-healed: %s" % fresh[:40] + "...")
-        return True
-    except Exception as exc:
-        with _FE_VERSION_LOCK:
-            _FE_VERSION_STATE.update({"refreshed_at": now, "last_error": str(exc)[:200]})
-        return False
+            s = session or creq.Session(impersonate=IMPERSONATE, timeout=_FE_VERSION_FETCH_TIMEOUT)
+            r = s.get("https://duck.ai/", headers={"User-Agent": UA},
+                      timeout=_FE_VERSION_FETCH_TIMEOUT)
+            if r.status_code != 200:
+                raise RuntimeError("homepage status %s" % r.status_code)
+            m = _FE_VERSION_TOKEN_RE.search(r.text or "")
+            if not m:
+                raise RuntimeError("no serp_* token in homepage")
+            fresh = m.group(0)
+            current = current_fe_version()
+
+            # 防降级 1：时间戳更旧的首页 token 一律忽略（CDN/缓存回旧值的场景）。
+            fs, cs = _fe_token_stamp(fresh), _fe_token_stamp(current)
+            if fs and cs and fs < cs:
+                with _FE_VERSION_LOCK:
+                    _FE_VERSION_STATE.update({"refreshed_at": now, "last_error": "",
+                                              "source": "confirmed-rejected-older",
+                                              "failures": 0})
+                return False
+            # 防降级 2：互为前缀时保留更长（带 build hash）的已验证形态。
+            if fresh.startswith(current) or current.startswith(fresh):
+                fresher = fresh if len(fresh) > len(current) else current
+                with _FE_VERSION_LOCK:
+                    _FE_VERSION_STATE.update({
+                        "value": fresher, "refreshed_at": now, "last_error": "",
+                        "source": "self-healed" if fresher != current else "confirmed",
+                        "failures": 0})
+                if fresher == current:
+                    return False
+                fresh = fresher
+            with _FE_VERSION_LOCK:
+                _FE_VERSION_STATE.update({"value": fresh, "refreshed_at": now,
+                                          "last_error": "", "source": "self-healed",
+                                          "failures": 0})
+            try:
+                with open(_FE_VERSION_CACHE, "w", encoding="utf-8") as fh:
+                    json.dump({"value": fresh, "at": now}, fh)
+            except OSError:
+                pass
+            if log:
+                log("x-fe-version self-healed: %s" % fresh[:40])
+            return True
+        except Exception as exc:
+            with _FE_VERSION_LOCK:
+                _FE_VERSION_STATE.update({"refreshed_at": now,
+                                          "last_error": str(exc)[:200],
+                                          "failures": int(_FE_VERSION_STATE.get("failures") or 0) + 1})
+            return False
+    finally:
+        if acquired:
+            _FE_REFRESHING.release()
 
 
 def _load_fe_version_cache():
@@ -197,6 +259,10 @@ class PureUpstreamAdapter:
         self.length = 0
         self._done = False
         self._first = object()
+        # R2：上游错误帧没有 choices，aggregate_stream 会整帧丢弃；留一份最后
+        # 错误文本，让非流式出口在「空完成」时能报出真实原因（418/配额/无出口）。
+        self.last_error = ""
+        self.text_chunks = 0     # S7：成功产出的正文帧数（0 = 白跑一发）
 
     def read1(self, size=65536):
         if self._buf:
@@ -234,12 +300,15 @@ class PureUpstreamAdapter:
         if not isinstance(j, dict):
             return b''
         if j.get('action') != 'success':
+            # R2：留一份最后错误文本，非流式「空完成」时能报出真实原因
+            self.last_error = str(j.get('message') or j.get('action'))[:300]
             err = {'error': {'message': str(j.get('message') or j)[:300],
                              'type': 'upstream_error', 'code': j.get('action')}}
             return ('data: %s\n\n' % json.dumps(err)).encode('utf-8')
         text = j.get('message')
         if not isinstance(text, str) or not text:
             return b''
+        self.text_chunks += 1   # S7：成功产出的正文帧计数
         chunk = {
             'id': j.get('id') or 'chatcmpl-duck',
             'object': 'chat.completion.chunk',
@@ -258,6 +327,37 @@ class PureUpstreamAdapter:
     def __exit__(self, *a):
         self.close()
         return False
+
+
+def _heal_and_retry(session, chat_url, body, headers, r2, log=None):
+    """挑战重试已耗尽时的一次自愈重试。
+
+    前置：调用方的重试循环刚跑完，`r2` 是最后一次响应。仅当它仍是
+    ERR_CHALLENGE 才动手——非挑战错误（配额/IP）直接原样返回，不浪费请求。
+
+    自愈成功后重取挑战并**校验**：status 非 200 或拿不到 vqd 就放弃（返回原
+    r2），避免用已失效的旧挑战再打一发、把失败原因搅浑。
+    """
+    if r2 is None or getattr(r2, 'status_code', None) == 200:
+        return r2
+    if 'ERR_CHALLENGE' not in (getattr(r2, 'text', '') or ''):
+        return r2
+    if not refresh_fe_version(session=session, log=log):
+        return r2
+    headers['x-fe-version'] = current_fe_version() + FE_VERSION_SUFFIX
+    try:
+        r1 = session.get(_STATUS_URL, headers={'Cache-Control': 'no-store',
+                                               'x-vqd-accept': '1',
+                                               'Referer': 'https://duck.ai/'})
+    except Exception:
+        return r2
+    if getattr(r1, 'status_code', None) != 200:
+        return r2
+    vqd64 = (getattr(r1, 'headers', None) or {}).get('x-vqd-hash-1') or ''
+    if not vqd64:
+        return r2
+    headers['x-vqd-hash-1'] = _node_answer(base64.b64decode(vqd64).decode('utf-8'))
+    return session.post(chat_url, json=body, headers=headers)
 
 
 def _flatten_multiturn(messages):
@@ -351,7 +451,7 @@ def chat_stream_via_session(session, model, messages, exit_proxy=None):
                 'x-duckai-continuation': 'resubmit-context',
                 'x-duckai-response-id': str(uuid.uuid4()),
                 'x-duckai-tool-approval': 'web-search',
-                'x-fe-version': current_fe_version() + '-dev'[:64],
+                'x-fe-version': current_fe_version() + FE_VERSION_SUFFIX,
                 'x-fe-signals': _fe_signals(),
                 'Referer': 'https://duck.ai/',
                 'Origin': 'https://duck.ai',
@@ -376,27 +476,10 @@ def chat_stream_via_session(session, model, messages, exit_proxy=None):
                     break
                 vqd = _node_answer(base64.b64decode(vqd64).decode('utf-8'))
                 headers['x-vqd-hash-1'] = vqd
+            # 重试耗尽仍是挑战失败 → 自愈换 x-fe-version 后最后再试一轮，
+            # 然后落回下面统一的结果判定与解析（不提前 return）。
+            r2 = _heal_and_retry(session, _CHAT_URL, body, headers, r2)
             if r2 is None or r2.status_code != 200:
-                # 重试耗尽仍是挑战失败 → 可能 x-fe-version 已随 duck 发版漂移，
-                # 触发自愈抓取（有最小间隔防抖），抓到新值则换头最后再试一轮。
-                if r2 is not None and 'ERR_CHALLENGE' in r2.text:
-                    if refresh_fe_version(session=session):
-                        headers['x-fe-version'] = current_fe_version() + '-dev'[:64]
-                        r1 = session.get(_STATUS_URL,
-                                         headers={'Cache-Control': 'no-store',
-                                                  'x-vqd-accept': '1',
-                                                  'Referer': 'https://duck.ai/'})
-                        vqd64 = r1.headers.get('x-vqd-hash-1') or ''
-                        if vqd64:
-                            headers['x-vqd-hash-1'] = _node_answer(
-                                base64.b64decode(vqd64).decode('utf-8'))
-                        r2 = session.post(_CHAT_URL, json=body, headers=headers)
-                        if r2.status_code == 200:
-                            for line in r2.text.splitlines():
-                                line = line.strip()
-                                if line.startswith('data: '):
-                                    on_frame(line[6:])
-                            return
                 raise RuntimeError('chat %s: %s' % (getattr(r2, 'status_code', '?'),
                                                     getattr(r2, 'text', '')[:200]))
             for line in r2.text.split('\n'):
@@ -436,6 +519,7 @@ class PureDuckPool:
         self._cond = threading.Condition(self._lock)
         self._rr = 0
         self._panel_registered: set[str] = set()   # 面板 upsert 过的名字（持久化范围）
+        self._persist_lock = threading.Lock()      # 串行化写盘，防旧快照覆盖新快照
 
     # -- 持久化（仅面板注册面；环境变量来源重启后自然恢复，不落盘）--
     @classmethod
@@ -443,20 +527,30 @@ class PureDuckPool:
         cls.PERSIST_PATH = path
 
     def _persist(self):
-        """把面板注册的出口写盘（原子写）。PERSIST_PATH 为 None 时跳过。"""
+        """把面板注册的出口写盘（原子写）。PERSIST_PATH 为 None 时跳过。
+
+        取值口径（C1 修复）：面板注册过的出口可能处于两种状态——仅在
+        `_registered`（已注册未 spawn）或已搬进 `_exits`（spawn 过）。两种都要
+        落盘，否则「用一次之后再改任意出口」就会把已 spawn 的那条从盘上抹掉。
+        快照在 _persist_lock 内取，串行化写入，避免旧快照后写覆盖新快照。
+        """
         path = self.PERSIST_PATH
         if not path:
             return
         try:
-            with self._lock:
-                data = {n: self._registered.get(n)
-                        for n in sorted(self._panel_registered)
-                        if n in self._registered}
-            os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-            tmp = path + ".tmp"
-            with open(tmp, "w", encoding="utf-8") as fh:
-                json.dump(data, fh, ensure_ascii=False, indent=2)
-            os.replace(tmp, path)
+            with self._persist_lock:
+                with self._lock:
+                    data = {}
+                    for name in sorted(self._panel_registered):
+                        if name in self._registered:
+                            data[name] = self._registered[name]
+                        elif name in self._exits:
+                            data[name] = self._exits[name].get("proxy")
+                os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+                tmp = path + ".tmp"
+                with open(tmp, "w", encoding="utf-8") as fh:
+                    json.dump(data, fh, ensure_ascii=False, indent=2)
+                os.replace(tmp, path)
         except OSError as exc:
             self.log("exit persist failed %s: %s" % (path, exc))
 
@@ -549,7 +643,6 @@ class PureDuckPool:
                                           'https': _normalize_proxy(rproxy)} if rproxy else None),
                                 timeout=60),
                         }
-                        self._registered.pop(rname, None)
                 idle = [e for e in self._exits.values() if not e['busy']]
                 if idle:
                     # B3 质量评分：按分数降序取最好者（分数相同时保持轮询公平）。
@@ -588,7 +681,7 @@ class PureDuckPool:
                 'x-duckai-continuation': 'resubmit-context',
                 'x-duckai-response-id': str(uuid.uuid4()),
                 'x-duckai-tool-approval': 'web-search',
-                'x-fe-version': current_fe_version() + '-dev'[:64],
+                'x-fe-version': current_fe_version() + FE_VERSION_SUFFIX,
                 'x-fe-signals': _fe_signals(),
                 'Referer': 'https://duck.ai/',
                 'Origin': 'https://duck.ai',
@@ -609,18 +702,32 @@ class PureDuckPool:
                     break
                 headers['x-vqd-hash-1'] = _node_answer(
                     base64.b64decode(vqd64).decode('utf-8'))
+            # 重试耗尽仍是挑战失败 → 自愈换头后最后再试一轮
+            r2 = _heal_and_retry(e['session'], _CHAT_URL, body, headers, r2, log=self.log)
             if r2 is None or r2.status_code != 200:
                 raise RuntimeError('chat %s: %s' % (getattr(r2, 'status_code', '?'),
                                                     getattr(r2, 'text', '')[:200]))
             started = time.time()
+            text_frames = 0
             for line in r2.text.split('\n'):
                 line = line.strip()
                 if line.startswith('data: '):
-                    on_frame(line[6:])
+                    payload = line[6:]
+                    try:
+                        if (json.loads(payload) or {}).get('message'):
+                            text_frames += 1
+                    except Exception:
+                        pass
+                    on_frame(payload)
             e['last_ok'] = time.time()
             try:
                 import exit_score
-                exit_score.BOARD.record_success(e['name'], time.time() - started)
+                if text_frames:
+                    exit_score.BOARD.record_success(e['name'], time.time() - started)
+                else:
+                    # S7：200 但零正文帧意味着这个出口这次白跑了。不降权的话，
+                    # 坏出口会被 _pick 反复选中，客户端则按 502 不断重试。
+                    exit_score.BOARD.record_failure(e['name'], 'empty completion')
             except Exception:
                 pass
         except Exception as exc:
@@ -742,7 +849,7 @@ def duck_chat_stream(model, messages, on_chunk_error=None):
                     'x-duckai-continuation': 'resubmit-context',
                     'x-duckai-response-id': str(uuid.uuid4()),
                     'x-duckai-tool-approval': 'web-search',
-                    'x-fe-version': current_fe_version() + '-dev'[:64],
+                    'x-fe-version': current_fe_version() + FE_VERSION_SUFFIX,
                     'x-fe-signals': _fe_signals(),
                     'Referer': 'https://duck.ai/',
                     'Origin': 'https://duck.ai',
@@ -763,6 +870,9 @@ def duck_chat_stream(model, messages, on_chunk_error=None):
                         break
                     headers['x-vqd-hash-1'] = _node_answer(
                         base64.b64decode(vqd64).decode('utf-8'))
+                # 重试耗尽仍挑战失败 → 自愈换头后最后再试一轮（known#4）
+                r2 = _heal_and_retry(e['session'], _CHAT_URL, body, headers, r2,
+                                     log=self_log())
                 if r2 is None or r2.status_code != 200:
                     raise RuntimeError('chat %s: %s' % (getattr(r2, 'status_code', '?'),
                                                         getattr(r2, 'text', '')[:200]))

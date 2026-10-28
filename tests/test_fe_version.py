@@ -19,11 +19,11 @@ def _isolate(tmp_path, monkeypatch):
     monkeypatch.setattr(duck_pure, "_FE_VERSION_MIN_INTERVAL", 0.0)
     duck_pure._FE_VERSION_STATE.update({"value": duck_pure._FE_VERSION_PREFIX,
                                         "refreshed_at": 0.0, "last_error": "",
-                                        "source": "builtin"})
+                                        "source": "builtin", "failures": 0})
     yield
     duck_pure._FE_VERSION_STATE.update({"value": duck_pure._FE_VERSION_PREFIX,
                                         "refreshed_at": 0.0, "last_error": "",
-                                        "source": "builtin"})
+                                        "source": "builtin", "failures": 0})
 
 
 class _FakeResp:
@@ -97,3 +97,28 @@ def test_malformed_homepage_no_false_positive():
     ok = duck_pure.refresh_fe_version(session=_FakeSession("<html>nothing here</html>"))
     assert not ok
     assert duck_pure.current_fe_version() == duck_pure._FE_VERSION_PREFIX
+
+
+REAL_HOMEPAGE_SAMPLE = ('<script src="/dist/duckai-dist/entry.duckai.376e1fa8f581023a361e.js">'
+                        '</script><div data-build="serp_20261027_210303_ET"></div>')
+
+
+def test_real_homepage_bare_token_accepted(monkeypatch):
+    """2026-10-28 实测首页只含 `serp_..._ET`（无 hash 后缀），必须能提取。"""
+    import duck_pure
+    # 当前值是带 hash 的旧串：时间戳不同 → 应当换成首页的新串
+    duck_pure._FE_VERSION_STATE["value"] = "serp_20260101_000000_ET-oldhash"
+    ok = duck_pure.refresh_fe_version(session=_FakeSession(REAL_HOMEPAGE_SAMPLE))
+    assert ok and duck_pure.current_fe_version() == "serp_20261027_210303_ET"
+
+
+def test_no_downgrade_to_bare_token():
+    """首页裸 token 是当前工作值的前缀时，不得覆盖（防降级）。"""
+    import duck_pure
+    current = duck_pure._FE_VERSION_PREFIX           # serp_..._ET-<hash>
+    bare = current.split("-")[0]                     # serp_..._ET
+    # 前置断言：如果内置值将来去掉 hash 后缀，本用例会退化成恒真而不报错
+    assert bare != current, "内置版本串不含 hash 后缀，本防降级用例失效"
+    ok = duck_pure.refresh_fe_version(session=_FakeSession("<i>%s</i>" % bare))
+    assert not ok
+    assert duck_pure.current_fe_version() == current

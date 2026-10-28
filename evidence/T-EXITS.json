@@ -1,0 +1,60 @@
+{
+  "task_id": "T-EXITS",
+  "status": "passed",
+  "timestamp": "2026-10-28T18:15:47",
+  "commands_executed": [
+    {
+      "cmd": "panel login → POST /accounts/duck-exit-upsert (X-Panel-Token)",
+      "exit_code": 0,
+      "raw_output_tail": " <key>' or '?key=<key>'; copy the value from the panel's 设置 page\", \"type\": \"invalid_request_error\", \"c\n### exits upsert (X-Panel-Token header)\n{\"ok\": true, \"msg\": \"exit audit-exit ready (proxy=http://9.9.9.9:1080)\"}\n### persisted\n{\n  \"audit-exit\": \"http://9.9.9.9:1080\"\n}### exits list\n{\"ok\": true, \"exits\": [{\"name\": \"audit-exit\", \"proxy\": \"http://9.9.9.9:1080\", \"busy\": false, \"last_ok\": 0.0, \"last_err\": \"\", \"score\": null, \"alive\": true}, {\"name\": \"direct\", \"proxy\": null, \"busy\": false, \"last_ok\": 1793182187.575897, \"last_err\": \"chat 418: {\\\"action\\\":\\\"error\\\",\\\"status\\\":418,\\\"type\\\":\\\"ERR_CHALLENGE\\\",\\\"overrideCode\\\":\\\"3501\\\",\\\"cd\\\":{\\\"cc\\\":\\\"duckchat\\\",\\\"e\\\":0,\\\"er\\\":null,\\\"gk\n### updates\n{\"current_version\": \"1.8.0\", \"latest_version\": null, \"update_available\": false, \"enabled\": false, \"checking\": false, \"last_attempt\": null, \"last_success\": null, \"last_error\": \"\", \"release_url\": \"\", \"l\n"
+    },
+    {
+      "cmd": "python -m pytest tests/test_exit_persist.py tests/test_exit_score.py -q",
+      "exit_code": 0,
+      "raw_output_tail": "13 passed"
+    }
+  ],
+  "files_changed": [
+    "gateway/duck_pure.py",
+    "gateway/wb_proxy.py"
+  ],
+  "tests": [
+    {
+      "name": "出口持久化",
+      "type": "unit",
+      "status": "passed",
+      "evidence": "tests/test_exit_persist.py"
+    },
+    {
+      "name": "出口评分",
+      "type": "unit",
+      "status": "passed",
+      "evidence": "tests/test_exit_score.py"
+    },
+    {
+      "name": "面板出口 upsert→落盘→列表",
+      "type": "e2e",
+      "status": "passed",
+      "evidence": "evidence/raw/seams.txt"
+    }
+  ],
+  "coverage_summary": {
+    "lines": null,
+    "branches": null,
+    "functions": null,
+    "statements": null
+  },
+  "seams_touched": [
+    "S6 出口池",
+    "S7 面板出口管理"
+  ],
+  "mock_scenarios_covered": [],
+  "browser_validation": {
+    "performed": false,
+    "paths": [],
+    "screenshots": []
+  },
+  "limitations": [
+    "出口的真实代理连通性未验证（需可用代理节点）"
+  ]
+}

@@ -15564,6 +15564,42 @@ class SSEHeartbeat:
         return False
 
 
+def completion_is_empty(chat_obj):
+    """True when a folded completion carries no text, reasoning or tool calls.
+
+    duck.ai 偶发返回空 success 帧（模型未生成任何 token），aggregate_stream 会把
+    它折成一个内容为空的 chat.completion。直接回 200 会让客户端拿到 ""，无法
+    区分「模型确实无话可说」与「上游这次没产出」——后者应当报错让客户端重试。
+
+    例外：`finish_reason == "content_filter"` 是上游**明确**的拒绝结论（正文为空
+    是结果的一部分），重试只会拿到同样结果，所以不算"空产出"，照常回 200。
+    """
+    for choice in (chat_obj.get("choices") or []):
+        if (choice.get("finish_reason") or "") == "content_filter":
+            return False
+        msg = choice.get("message") or {}
+        if (msg.get("content") or "").strip():
+            return False
+        if (msg.get("reasoning_content") or "").strip():
+            return False
+        if msg.get("tool_calls"):
+            return False
+    return True
+
+
+def empty_completion_reason(upstream, chat_obj):
+    """Why a completion came back empty — 优先上游自己报的错，其次兜底文案。
+
+    纯协议通道把 418/配额/无出口这类失败写成 `{"error": ...}` 帧，这类帧没有
+    choices，aggregate_stream 会整帧丢弃；适配器的 `last_error` 保留了原文，
+    所以在报 502 时优先带上它，否则调用方只会看到 "empty completion"。
+    """
+    upstream_error = str(getattr(upstream, "last_error", "") or "").strip()
+    if upstream_error:
+        return "upstream error: %s" % upstream_error[:200]
+    return "upstream returned an empty completion; retry the request"
+
+
 def aggregate_stream(raw_iter, model, resp_id):
     """Fold an SSE stream into one non-streaming chat.completion object."""
     content, reasoning, finish = [], [], "stop"
@@ -22119,6 +22155,14 @@ class Handler(BaseHTTPRequestHandler):
                          fp=fp, outcome="empty_reasoning", key=self._key_id())
             return self._error(
                 502, "upstream returned reasoning without output text; retry")
+        if completion_is_empty(chat_obj):
+            # 同一缺陷族的第三个出口：完全空产出不能回 200（Responses 客户端
+            # 会拿到空 output，与 chat.completions 一样无法诊断）。
+            reason = empty_completion_reason(upstream, chat_obj)
+            record_error(model, 502, reason, elapsed_ms=wall, account=account.uid,
+                         usage=chat_obj.get("usage"), stream=False, fp=fp,
+                         outcome="empty_completion", key=self._key_id())
+            return self._error(502, reason, "upstream_error")
         record_upstream_usage(upstream, model, chat_obj.get("usage"), stream=False, elapsed_ms=wall, fp=fp,
                      account=account.uid, key=self._key_id(), effort=effort)
         return self._json(200, result)
@@ -22243,8 +22287,15 @@ class Handler(BaseHTTPRequestHandler):
                                      effort=None):
         try:
             chat_obj = aggregate_stream(upstream, model, None)
-            result = chat_to_messages(chat_obj)
             wall = int((time.time() - t_start) * 1000)
+            if completion_is_empty(chat_obj):
+                # Anthropic 客户端同样不该拿到空 content（原实现完全没有这条）。
+                reason = empty_completion_reason(upstream, chat_obj)
+                record_error(model, 502, reason, elapsed_ms=wall, account=account.uid,
+                             usage=chat_obj.get("usage"), stream=False, fp=fp,
+                             outcome="empty_completion", key=self._key_id())
+                return self._anthropic_error(502, reason)
+            result = chat_to_messages(chat_obj)
             record_upstream_usage(upstream, model, chat_obj.get("usage"), stream=False, elapsed_ms=wall,
                          fp=fp, account=account.uid, key=self._key_id(), effort=effort)
             return self._json(200, result)
@@ -22766,6 +22817,16 @@ class Handler(BaseHTTPRequestHandler):
                 ((chat_obj.get("choices") or [{}])[0])["finish_reason"] = "tool_calls"
             elif content is not None:
                 msg["content"] = content
+        if completion_is_empty(chat_obj):
+            # 上游这次没产出任何 token：报错让客户端重试，而不是回 200 空串。
+            # 与 reasoning_only_response 的既有实现保持同一口径：带 usage/fp/
+            # outcome，否则这批 token 不计账、失败归因也混在 "failed" 里。
+            reason = empty_completion_reason(upstream, chat_obj)
+            record_error(model, 502, reason,
+                         elapsed_ms=int((time.time() - t_start) * 1000),
+                         account=None, usage=chat_obj.get("usage"), stream=False,
+                         fp=fp, outcome="empty_completion", key=self._key_id())
+            return self._error(502, reason, "upstream_error")
         usage = chat_obj.get("usage") or {
             "prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}
         record_usage(model, usage, stream=False,
@@ -23013,6 +23074,13 @@ class Handler(BaseHTTPRequestHandler):
             return self._error(502, f"upstream stream error: {exc}")
         if egress_on and egress_key:
             wb_egress.note_success(egress_key)
+        if completion_is_empty(result):
+            reason = empty_completion_reason(upstream, result)
+            record_error(model, 502, reason,
+                         elapsed_ms=int((time.time() - t_start) * 1000),
+                         account=account.uid, usage=result.get("usage"), stream=False,
+                         fp=fp, outcome="empty_completion", key=self._key_id())
+            return self._error(502, reason, "upstream_error")
         wall = int((time.time() - t_start) * 1000)
         first_at = result.get("first_chunk_at")
         # Measured from request arrival so streaming and non-streaming are comparable.

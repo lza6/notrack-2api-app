@@ -1,0 +1,50 @@
+{
+  "task_id": "T-DESKTOP",
+  "status": "passed",
+  "timestamp": "2026-10-28T18:19:15",
+  "commands_executed": [
+    {
+      "cmd": "cd desktop && npm run dist (含 pre-dist.ps1 前置)",
+      "exit_code": 0,
+      "raw_output_tail": "building target=portable file=dist\\DuckFlow-Portable.exe archs=x64\n-rwxr-xr-x 106M Oct 28 18:18 dist/DuckFlow-Portable.exe"
+    },
+    {
+      "cmd": "双击 DuckFlow-Portable.exe → curl /health / /updates /v1/chat/completions",
+      "exit_code": 0,
+      "raw_output_tail": "=== exe 真机 2026-10-28T18:18:43+08:00 ===\nhealth: {\"ok\": true, \"realm\": \"intl\", \"accounts\": 0, \"accounts_ready\": 0, \"api_key_required\": false, \"uid\": \ndashboard: 200\nupdates: 200\nchat:\n{\"id\": \"msg_0a6ed285e7f21bcc016ae1cc14e1c087d1b6d85c91516b7e08\", \"object\": \"chat.completion\", \"created\": 1793182737, \"model\": \"gpt-6-luna\", \"choices\": [{\"index\": 0, \"message\": {\"role\": \"assistant\", \"content\": \"exe-ok\"}, \"finish_reason\": \"stop\"}], \"usage\": {\"prompt_tokens\": 1, \"completion_tokens\": 1,"
+    }
+  ],
+  "files_changed": [
+    "desktop/main.js",
+    "desktop/package.json",
+    "desktop/pre-dist.ps1"
+  ],
+  "tests": [
+    {
+      "name": "exe 真机全链路",
+      "type": "e2e",
+      "status": "passed",
+      "evidence": "evidence/raw/desktop-exe.txt"
+    }
+  ],
+  "coverage_summary": {
+    "lines": null,
+    "branches": null,
+    "functions": null,
+    "statements": null
+  },
+  "seams_touched": [
+    "S9 桌面启动"
+  ],
+  "mock_scenarios_covered": [],
+  "browser_validation": {
+    "performed": false,
+    "paths": [],
+    "screenshots": [],
+    "note": "无 Playwright 会话；面板仅 HTTP 200 + 静态确认"
+  },
+  "limitations": [
+    "未模拟换机打包（干净 PATH，pythonw.exe 依赖目标机 PATH）",
+    "electron 窗口未做像素级 UI 断言"
+  ]
+}

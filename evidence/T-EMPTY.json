@@ -1,0 +1,53 @@
+{
+  "task_id": "T-EMPTY",
+  "status": "passed",
+  "timestamp": "2026-10-28T18:15:47",
+  "commands_executed": [
+    {
+      "cmd": "10 次非流式调用统计 200有内容 / 502空完成 / 200空串",
+      "exit_code": 0,
+      "raw_output_tail": "result: {'200-with-content': 9, '502-empty-guard': 1}\nsamples: [\"'Hi there!'\", \"'Hi there!'\", \"'Hi there!'\"]\n"
+    },
+    {
+      "cmd": "python -m pytest tests/test_empty_completion.py -q",
+      "exit_code": 0,
+      "raw_output_tail": "5 passed in 0.06s"
+    }
+  ],
+  "files_changed": [
+    "gateway/wb_proxy.py",
+    "tests/test_empty_completion.py"
+  ],
+  "tests": [
+    {
+      "name": "空完成守护",
+      "type": "unit",
+      "status": "passed",
+      "evidence": "tests/test_empty_completion.py"
+    },
+    {
+      "name": "空完成守护 E2E",
+      "type": "e2e",
+      "status": "passed",
+      "evidence": "evidence/raw/empty-guard-e2e.txt"
+    }
+  ],
+  "coverage_summary": {
+    "lines": null,
+    "branches": null,
+    "functions": null,
+    "statements": null
+  },
+  "seams_touched": [
+    "S4 纯协议通道"
+  ],
+  "mock_scenarios_covered": [],
+  "browser_validation": {
+    "performed": false,
+    "paths": [],
+    "screenshots": []
+  },
+  "limitations": [
+    "修复前：空 completion 静默回 200 空串；修复后：502 upstream_error 让客户端重试"
+  ]
+}

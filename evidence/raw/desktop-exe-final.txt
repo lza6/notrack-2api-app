@@ -1,0 +1,6 @@
+=== exe 真机（修复后重打包）2026-10-28T18:38:46+08:00 ===
+health: {"ok": true, "realm": "intl", "accounts": 0, "accounts_ready": 0, "api_key_requi
+updates: 200
+chat: {"error": {"message": "upstream error: chat 418: {\"action\":\"error\",\"status\":418,\"type\":\"ERR_CHALLENGE\",\"overrideCode\":\"3501\",\"cd\":{\"cc\":\"duckchat\",\"e\":0,\"er\":null,\"gk\":\"d4cd0dabcf4caa22ad92fab40844c786\",\"i\":\"3\",\"iadb\":1,\"o\":try1: ERR: upstream error: chat 418: {"action":"error","status":418,"type":"ERR_C
+try2: OK: 'ok'
+try3: ERR: upstream error: chat 418: {"action":"error","status":418,"type":"ERR_C

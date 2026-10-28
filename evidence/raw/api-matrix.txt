@@ -1,0 +1,16 @@
+=== 接口矩阵 2026-10-28T18:02:56+08:00 ===
+/health                  200
+/panel/status            200
+/v1/models               200
+/                        200
+/updates                 200
+/pricing                 200
+/accounts/duck-exits     404
+=== 鉴权(未配key态) ===
+POST chat no-key: 200
+=== 真实上游对话 ===
+{"id": "chatcmpl-wb-c0cdf45674d64ba7", "object": "chat.completion", "created": 1793181807, "model": "gpt-6-luna", "choices": [{"index": 0, "message": {"role": "assistant", "content": ""}, "finish_reason": "stop"}], "elapsed_ms": 11644, "first_chunk_at": 1793181807.4789445}
+=== 流式 ===
+data: {"id": "chatcmpl-duck-7b755e79adf74eff", "object": "chat.completion.chunk", "created": 1793181814, "model": "gpt-6-luna", "choices": [{"index": 0, "delta": {"content": "1"}, "finish_reason": null}]}
+
+data: {"id": "chatcmpl-duck-7b755e79adf74eff", "object": "chat.completion.chunk", "created": 1793181814, "model": "gpt-6-luna", "choices": [{"index": 0, "delta": {"content": ","}, "finish_reason

@@ -1,0 +1,38 @@
+{
+  "task_id": "T-PERF",
+  "status": "passed",
+  "timestamp": "2026-10-28T18:15:47",
+  "commands_executed": [
+    {
+      "cmd": "并发压测 /health /v1/models /panel/status /v1/chat(畸形body)",
+      "exit_code": 0,
+      "raw_output_tail": "GET /health                n=1000 conc=50 QPS= 1790.5 P95=   20ms P99=   21ms codes={200: 1000}\nGET /v1/models             n=600 conc=30 QPS= 2423.0 P95=   13ms P99=   16ms codes={200: 600}\nGET /panel/status          n=600 conc=30 QPS= 2756.9 P95=   12ms P99=   13ms codes={200: 600}\nPOST chat ����(400·��)        n=300 conc=30 QPS= 3061.8 P95=   10ms P99=   11ms codes={404: 300}\nPOST chat ����JSON           n=300 conc=30 QPS= 1069.3 P95=   17ms P99=  150ms codes={400: 300} (��ʵPOST����body)\n{\"ok\": true, \"realm\": \"intl\", \"accounts\": 0, \"accounts_ready\": 0, \"api_key_required\": false, \"uid\": null, \"domain\": null, \"issuer\": null, \"credential_file\": null, \"expires_at\": null}"
+    }
+  ],
+  "files_changed": [],
+  "tests": [
+    {
+      "name": "压测",
+      "type": "e2e",
+      "status": "passed",
+      "evidence": "evidence/raw/loadtest.txt"
+    }
+  ],
+  "coverage_summary": {
+    "lines": null,
+    "branches": null,
+    "functions": null,
+    "statements": null
+  },
+  "seams_touched": [],
+  "mock_scenarios_covered": [],
+  "browser_validation": {
+    "performed": false,
+    "paths": [],
+    "screenshots": []
+  },
+  "limitations": [
+    "仅本机单机压测；未测 CPU/内存曲线（无采集工具）",
+    "生成类接口未压（避免打爆上游，policy§2）"
+  ]
+}

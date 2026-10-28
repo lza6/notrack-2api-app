@@ -21,6 +21,11 @@
 9. wb_proxy.py 23442 行拆分：方案见 docs/plan-b5-split.md，待用户批准。
 11. 免费代理节点转发对话明文（设计约束，README 已警示）。
 
+## P3（v1.9.3 复验发现，既有行为）
+- 已 spawn 的出口在面板换 proxy 时，内存里的 curl_cffi session 不会重建：盘上写新
+  proxy、运行期仍走旧 session，需重启生效（`duck_pure._persist` 偏好 `_registered`，
+  `_exits[name]['session']` 在 spawn 时绑定）。HEAD 版本行为一致，非本轮引入。
+
 ## 新发现（v1.9.2 实施中修复的断层）
 - 面板出口管理只操作 CDP 池而 pure 是默认通道——已修（upsert/remove 同步 pure 池）。
 - pure 池 list_exits 漏列懒注册出口——已修（合并 _registered）。

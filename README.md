@@ -21,6 +21,17 @@ python wb_proxy.py --port 8788
 | API Key 落盘加密 | `--encrypt-at-rest` 或 `DUCK_ENCRYPT_AT_REST=1`：settings.json 中的 API key 以 AES-256-GCM 信封存储，密钥在 `accounts/.atrest.key`。防单文件泄露；整个 accounts/ 目录一起被拷走则无防护。 |
 | 出口质量评分 | 出口池按 0-100 分自动排序选取（成功率+时延+连续失败惩罚），坏节点自动沉底，面板出口列表透出 score。 |
 | 出口指纹隔离 | `DUCK_EXIT_SEED` 可为每个出口派生稳定的挑战指纹（Canvas/WebGL/Audio/WebRTC 面），出口间互不关联。 |
+| 出口池持久化 | 面板添加的出口落盘 `accounts/duck-exits.json`，重启自动恢复（环境变量/代理文件来源由各自来源恢复）。 |
+| 上游版本自愈 | duck.ai 发版导致 `x-fe-version` 失效时，自动从首页抓取最新版本串热更并落盘缓存；状态可在面板 `/accounts/duck-exits` 的 `fe_version` 字段查看。 |
+
+### 上游异常语义
+
+| 情况 | 返回 | 客户端应做 |
+|---|---|---|
+| 上游返回空 completion（未产出任何 token） | `502 upstream_error`（message 含 "empty completion"） | 重试请求 |
+| 上游 418 ERR_CHALLENGE | 服务内自动重试（默认 4 轮），仍失败则 `502`，message 含上游原文 | 稍后重试；持续失败多为 IP 信誉问题 |
+| 鉴权失败 | `401` | 检查 `Authorization: Bearer <key>`；面板管理端点需 `X-Panel-Token` 头 |
+| 请求体畸形 | `400` | 检查 JSON |
 
 ## 接入
 
@@ -101,12 +112,30 @@ gateway/           全部实现（包）
 
 desktop/           Electron 桌面壳（backend 已单源化：exe 打包根 wb_proxy.py
                    + gateway/**，源码只保留 gateway/ 一份）
-tests/             pytest 冒烟套件（python -m pytest tests/）
+tests/             pytest 套件（python -m pytest tests/）+ Node 指纹面测试
+policy.md          质量门禁（覆盖率/付费API/审查/证据/版本控制，数值写死）
+workflow_status.md 当前阶段、任务看板、验证记录、回滚点
+test_ledger.md     接缝登记 + 测试状态 + 未覆盖项
+evidence/          每个任务节点的证据 JSON + 原始命令输出
+AGENTS.md          代理必读顺序与硬约束
+CHANGELOG.md       版本变更记录
 archive/           历史归档（精简版网关/demo/上游快照/workbuddy 旧码）
 tools/mihomo/      运行时内核（自动下载）
 accounts/ usage/   运行时数据
 .agent/ reports/   项目记忆与变更报告
 ```
+
+## 开发与验证
+
+```powershell
+python -m pytest tests/ -q                      # 单元测试（48 例）
+node tests/test_fingerprint_surface.mjs         # 挑战沙箱指纹面（10 例）
+python -m py_compile gateway/*.py wb_proxy.py   # 语法检查
+powershell -File tools/smoke.ps1 -Port 8788     # 冒烟（起服务→接口→鉴权→对话）
+cd desktop; npm run dist                        # 打包（自动跑 pre-dist.ps1 杀实例+端口检查）
+```
+
+基线（本机）：并发 50 打 `/health` → QPS ~1790，P95 20ms，0 错误（见 `.agent/memory/optimization-log.md`）。
 
 ## 免密说明
 本机（127.0.0.1）访问且未设置面板密码时自动直进。设置密码后恢复令牌校验。

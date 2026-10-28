@@ -1,0 +1,85 @@
+{
+  "task_id": "T-REVIEW-FIX",
+  "status": "passed",
+  "timestamp": "2026-10-28T18:40:12",
+  "commands_executed": [
+    {
+      "cmd": "python -m pytest tests/ -q（含新增 13 例）",
+      "exit_code": 0,
+      "raw_output_tail": "63 passed in 0.71s"
+    },
+    {
+      "cmd": "复现 C1：register(panel) → _pick() → register(panel B) → 读盘",
+      "exit_code": 0,
+      "raw_output_tail": "修复前: after register panelB: {'panelB': 'http://2.2.2.2:80'}（panelA 消失）\n修复后: {'panelA': 'http://1.1.1.1:80', 'panelB': 'http://2.2.2.2:80'}"
+    },
+    {
+      "cmd": "运行时验证 C1：panel upsert A → 真实 chat 触发 spawn → upsert B → cat duck-exits.json",
+      "exit_code": 0,
+      "raw_output_tail": "es -> 400 {\"type\": \"error\", \"error\": {\"type\": \"invalid_request_error\", \"message\": \"Anthropic Messages is disab\n/v1/messages -> 502 {\"type\": \"error\", \"error\": {\"type\": \"api_error\", \"message\": \"no usable account for realm 'intl': all are disabled, cooling down, expired or parked by the daily \n=== C1 运行时验证: upsert A → 触发 spawn → upsert B → 盘上两条都在 ===\n盘上内容:\n{\n  \"rt-A\": \"http://7.7.7.7:80\",\n  \"rt-B\": \"http://8.8.8.8:80\"\n}"
+    }
+  ],
+  "files_changed": [
+    "gateway/duck_pure.py",
+    "gateway/wb_proxy.py",
+    "tests/test_empty_completion_wiring.py",
+    "tests/test_fe_version_heal.py",
+    "tests/test_exit_persist.py",
+    "tests/test_fe_version.py"
+  ],
+  "tests": [
+    {
+      "name": "502 接线（含 usage/outcome/上游错误透传/close）",
+      "type": "unit",
+      "status": "passed",
+      "evidence": "tests/test_empty_completion_wiring.py（5 例）"
+    },
+    {
+      "name": "C1 持久化丢项回归",
+      "type": "unit",
+      "status": "passed",
+      "evidence": "tests/test_exit_persist.py::test_spawned_panel_exit_survives_later_persist"
+    },
+    {
+      "name": "自愈单飞/失败退避/时间戳防降级/_heal_and_retry",
+      "type": "unit",
+      "status": "passed",
+      "evidence": "tests/test_fe_version_heal.py（6 例）"
+    },
+    {
+      "name": "exe 真机（重打包）",
+      "type": "e2e",
+      "status": "passed",
+      "evidence": "evidence/raw/desktop-exe-final.txt"
+    }
+  ],
+  "coverage_summary": {
+    "lines": null,
+    "branches": null,
+    "functions": null,
+    "statements": null
+  },
+  "seams_touched": [
+    "S4 纯协议通道",
+    "S6 出口池",
+    "S10 x-fe-version",
+    "S2 面板设置写"
+  ],
+  "mock_scenarios_covered": [
+    "upstream_empty",
+    "upstream_error_frame",
+    "challenge_418",
+    "fetch_timeout"
+  ],
+  "browser_validation": {
+    "performed": false,
+    "paths": [],
+    "screenshots": []
+  },
+  "limitations": [
+    "覆盖率未测量（coverage 未安装），覆盖率字段为 null",
+    "/v1/responses 与 /v1/messages 的空产出守护已接线但端到端不可验证：需 WorkBuddy 账号（本环境 0 账号，返回 503/502 no usable account）",
+    "418 挑战层噪声：单次请求原始成功率约 50%（A/B 对照 裸 token 3/6、内置 2/6），服务内 4 轮重试缓解；不属版本串问题",
+    "换机打包与 dashboard 像素级交互仍未验证"
+  ]
+}

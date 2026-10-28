@@ -1,0 +1,42 @@
+{
+  "task_id": "T-CHAT",
+  "status": "passed",
+  "timestamp": "2026-10-28T18:15:47",
+  "commands_executed": [
+    {
+      "cmd": "curl 非流式 + 流式 /v1/chat/completions（真实 duck.ai 上游）",
+      "exit_code": 0,
+      "raw_output_tail": "          200\n/v1/models               200\n/                        200\n/updates                 200\n/pricing                 200\n/accounts/duck-exits     404\n=== 鉴权(未配key态) ===\nPOST chat no-key: 200\n=== 真实上游对话 ===\n{\"id\": \"chatcmpl-wb-c0cdf45674d64ba7\", \"object\": \"chat.completion\", \"created\": 1793181807, \"model\": \"gpt-6-luna\", \"choices\": [{\"index\": 0, \"message\": {\"role\": \"assistant\", \"content\": \"\"}, \"finish_reason\": \"stop\"}], \"elapsed_ms\": 11644, \"first_chunk_at\": 1793181807.4789445}\n=== 流式 ===\ndata: {\"id\": \"chatcmpl-duck-7b755e79adf74eff\", \"object\": \"chat.completion.chunk\", \"created\": 1793181814, \"model\": \"gpt-6-luna\", \"choices\": [{\"index\": 0, \"delta\": {\"content\": \"1\"}, \"finish_reason\": null}]}\n\ndata: {\"id\": \"chatcmpl-duck-7b755e79adf74eff\", \"object\": \"chat.completion.chunk\", \"created\": 1793181814, \"model\": \"gpt-6-luna\", \"choices\": [{\"index\": 0, \"delta\": {\"content\": \",\"}, \"finish_reason"
+    }
+  ],
+  "files_changed": [
+    "gateway/wb_proxy.py"
+  ],
+  "tests": [
+    {
+      "name": "真实上游对话（流式/非流式）",
+      "type": "e2e",
+      "status": "passed",
+      "evidence": "evidence/raw/api-matrix.txt"
+    }
+  ],
+  "coverage_summary": {
+    "lines": null,
+    "branches": null,
+    "functions": null,
+    "statements": null
+  },
+  "seams_touched": [
+    "S4 纯协议通道"
+  ],
+  "mock_scenarios_covered": [],
+  "browser_validation": {
+    "performed": false,
+    "paths": [],
+    "screenshots": []
+  },
+  "limitations": [
+    "duck.ai 上游偶发 418 ERR_CHALLENGE（挑战层噪声，服务内已有重试）",
+    "本环境无 duck 账号池；对话走匿名通道"
+  ]
+}

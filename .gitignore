@@ -33,3 +33,8 @@ desktop/electron_dev.log
 tools/mihomo/alive_urls.json
 tools/mihomo/working_direct.json
 tools/mihomo/duck_ok_nodes.json
+
+# 运行时自愈缓存（duck.ai x-fe-version 抓取结果，随环境变化）
+gateway/.fe-version-cache.json
+tmp_audit_usage/
+tmp_audit_accounts/

@@ -1,0 +1,33 @@
+### S2 settings: 创建 key
+{"api_keys_saved": 1, "panel_password_is_default": true, "api_key_set": false, "api_key_set_by_panel": false, "api_key_masked": "", "auth_required": true, "api_keys": [{"id": "e3954cec7de5", "name": "audit-key", "realm":
+### S1 auth: 无key / 错key / 对key
+  key=<none>         -> 401
+  key=sk-wrong       -> 401
+  key=sk-audit-REDACTED   -> 200
+### S3 usage
+{"requests": 17, "errors": 1, "prompt_tokens": 27, "completion_tokens": 53, "reasoning_tokens": 0, "cached_tokens": 0, "total_tokens": 81, "credit": 0.0, "cost_cny": 0.00020731999999999996, "cost_missing": {}, "started": 1793181978.8858068, "by_model": {"gpt-6
+### S6/S7 exits: upsert -> persist -> list
+{"error": {"message": "invalid api key - send it as 'Authorization: Bearer <key>' or '?key=<key>'; copy the value from the panel's 设置 pa
+
+{"error": {"message": "invalid api key - send it as 'Authorization: Bearer <key>' or '?key=<key>'; copy the value from the panel's 设置 page", "type": "invalid_request_error", "code": 401}}
+### S8 updates
+{"error": {"message": "invalid api key - send it as 'Authorization: Bearer <key>' or '?key=<key>'; copy the value from the panel's 设置 page", "type": "invalid_request_error", "code": 401}}
+### panel login (passwordless loopback)
+token acquired: <REDACTED>...
+### exits upsert via panel token
+{"error": {"message": "invalid api key - send it as 'Authorization: Bearer <key>' or '?key=<key>'; copy the value from the panel's 设置 page", "type
+### persisted file
+(none)
+### exits list
+{"error": {"message": "invalid api key - send it as 'Authorization: Bearer <key>' or '?key=<key>'; copy the value from the panel's 设置 page", "type": "invalid_request_error", "code": 401}}
+### updates
+{"error": {"message": "invalid api key - send it as 'Authorization: Bearer <key>' or '?key=<key>'; copy the value from the panel's 设置 page", "type": "invalid_request_error", "c
+### exits upsert (X-Panel-Token header)
+{"ok": true, "msg": "exit audit-exit ready (proxy=http://9.9.9.9:1080)"}
+### persisted
+{
+  "audit-exit": "http://9.9.9.9:1080"
+}### exits list
+{"ok": true, "exits": [{"name": "audit-exit", "proxy": "http://9.9.9.9:1080", "busy": false, "last_ok": 0.0, "last_err": "", "score": null, "alive": true}, {"name": "direct", "proxy": null, "busy": false, "last_ok": 1793182187.575897, "last_err": "chat 418: {\"action\":\"error\",\"status\":418,\"type\":\"ERR_CHALLENGE\",\"overrideCode\":\"3501\",\"cd\":{\"cc\":\"duckchat\",\"e\":0,\"er\":null,\"gk
+### updates
+{"current_version": "1.8.0", "latest_version": null, "update_available": false, "enabled": false, "checking": false, "last_attempt": null, "last_success": null, "last_error": "", "release_url": "", "l

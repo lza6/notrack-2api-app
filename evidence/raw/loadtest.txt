@@ -1,0 +1,6 @@
+GET /health                n=1000 conc=50 QPS= 1790.5 P95=   20ms P99=   21ms codes={200: 1000}
+GET /v1/models             n=600 conc=30 QPS= 2423.0 P95=   13ms P99=   16ms codes={200: 600}
+GET /panel/status          n=600 conc=30 QPS= 2756.9 P95=   12ms P99=   13ms codes={200: 600}
+POST chat 空体(400路径)        n=300 conc=30 QPS= 3061.8 P95=   10ms P99=   11ms codes={404: 300}
+POST chat 畸形JSON           n=300 conc=30 QPS= 1069.3 P95=   17ms P99=  150ms codes={400: 300} (真实POST畸形body)
+{"ok": true, "realm": "intl", "accounts": 0, "accounts_ready": 0, "api_key_required": false, "uid": null, "domain": null, "issuer": null, "credential_file": null, "expires_at": null}

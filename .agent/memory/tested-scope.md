@@ -25,3 +25,10 @@
 | bind 审计 | netstat + 外网卡(192.168.1.2)探测 | 绑 127.0.0.1; 外网卡超时不可达 | 10-28 |
 | smoke.ps1 | tools/smoke.ps1 三端口各一轮 | ALL PASS（态感知断言） | 10-28 |
 | pytest 全套 | python -m pytest tests/ | 29/29（含 updates shim 回归 2 例） | 10-28 |
+| v1.9.3 接口矩阵 | curl health/panel/models/dashboard/updates/pricing | 全 200（/accounts GET 404 属预期，面板走 POST） | 18:02 |
+| v1.9.3 鉴权四态 | curl none/wrong/valid key | 401/401/200；配置 key 后管理端点要求 X-Panel-Token | 18:06 |
+| v1.9.3 空完成守护 | 10 次非流式 + 重构后 8 次 | 15 次中 3 次被 502 拦截、0 次 200 空串 | 18:40 |
+| v1.9.3 真实自愈 | 真实首页驱动 refresh_fe_version(force=True) | 103404→210303，source=self-healed；新值实测可 200 | 18:30 |
+| v1.9.3 压测 | /health 1000@50、/v1/models 600@30、/panel/status 600@30、畸形POST 300@30 | QPS 1790/2423/2757/1069，0 错误 | 18:12 |
+| v1.9.3 exe 真机 | npm run dist（含 pre-dist）→ 双击 → health/dashboard/updates/chat | 全通，chat 返回 "exe-ok" | 18:18 |
+| v1.9.3 单测 | python -m pytest tests/ -q | 50 passed | 18:45 |

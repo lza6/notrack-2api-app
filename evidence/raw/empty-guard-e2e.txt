@@ -1,0 +1,2 @@
+result: {'200-with-content': 9, '502-empty-guard': 1}
+samples: ["'Hi there!'", "'Hi there!'", "'Hi there!'"]

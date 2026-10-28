@@ -1,0 +1,11 @@
+ok   canvas 2d toDataURL 稳定
+ok   canvas toDataURL 同种子跨挑战稳定
+ok   webgl renderer 形态
+ok   webgl2 可取且类型一致
+ok   getSupportedExtensions 非空数组
+ok   AudioContext 采样率
+ok   OfflineAudioContext 渲染稳定（音频指纹核心路径）
+ok   RTCPeerConnection createOffer 出 SDP
+ok   challenge 现有 8 类面不受影响（iframe 怪癖）
+ok   navigator 形态不变
+ALL PASS
