@@ -22,10 +22,14 @@ OpenAI 客户端 → wb_proxy.py（网关: /v1/*, 多Key, 面板）
 4. duck 模型 6 个：gpt-6-luna(默认)/gpt-5.4-mini/claude-haiku-4-5/mistral-small-2603/tinfoil/gpt-oss-120b/tinfoil/gemma4-31b
 5. SSE 帧格式见 duck_upstream.py 头注释
 
-## 当前状态
-- 鉴权矩阵（401/200/400 模型限制）：✅ 已验证
-- 免密直进（本机回环+未设密码）：✅ 已验证；**注意 _key_ok 不得被免密豁免（安全修复 bfc7906）**
-- UI：账号体系/OAuth/签到/积分/双区域 全部移除（d2f690c）
+## 当前状态（2026-10-28 更新）
+- 鉴权矩阵（401/200/400 模型限制）：✅ 已验证；/v1/models 无key 401 为 bfc7906 有意行为
+- 免密直进（本机回环+未设密码）：✅ 已验证；bind 天然限回环（exe 默认 127.0.0.1，--lan 强制随机 key）
+- backend 双拷贝：❌ 已删除（v1.1 单源化 68d4a2c），desktop 打包根 gateway/**
+- at-rest 加密：✅ 可选（v1.9.0），--encrypt-at-rest / DUCK_ENCRYPT_AT_REST=1
+- 出口质量评分：✅ gateway/exit_score.py（v1.9.0 B3），两池按分选取
+- 挑战指纹面：✅ Canvas/WebGL/Audio/WebRTC（v1.9.0 B4），DUCK_EXIT_SEED 出口隔离
+- 测试：pytest 29 例 + tools/smoke.ps1 + tests/test_fingerprint_surface.mjs（Node 10例）
 - 待办：见 known-issues.md
 
 ## 禁止事项
