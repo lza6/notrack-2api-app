@@ -4,3 +4,4 @@ test	Unit tests	2026-10-28T11:28:14.4820584Z 91 passed in 1.32s
 test	Coverage (no-regression floor)	2026-10-28T11:28:16.6676462Z 91 passed in 1.58s
 test	Coverage (no-regression floor)	2026-10-28T11:28:18.1185490Z TOTAL                         22300  18825    16%
 test	Coverage (no-regression floor)	2026-10-28T11:28:19.5237268Z TOTAL                         22300  18825    16%
+- final exe E2E (19:43): health ok · /agents 降级准确 · chat 真实内容 · 106M 19:43

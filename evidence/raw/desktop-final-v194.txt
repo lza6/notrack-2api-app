@@ -1,0 +1,4 @@
+=== 最终代码 exe 真机 2026-10-28T19:43:48+08:00 ===
+health: {"ok": true, "realm": "intl", "accounts": 0, "accounts_ready
+agents: {"enabled": false, "reason": "wb_agents module is not bundled in this build"}
+chat: {"id": "msg_0d6380f9209ee376016ae1e0062e5487d193fd07c8a0833083", "object": "chat.completion", "created": 1793187842, "model": "gpt-6-luna", "choices": [{"index": 0, "message": {"ro
