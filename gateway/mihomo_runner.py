@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import logging
 import os
 import re
@@ -30,6 +31,10 @@ SOCKS_BASE_PORT = 41000
 MIHOMO_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tools", "mihomo")
 MIHOMO_DOWNLOAD_URL = ("https://github.com/MetaCubeX/mihomo/releases/download/"
                        "v1.19.2/mihomo-windows-amd64-v1.19.2.zip")
+# 供应链校验（known#7）：pin 住 v1.19.2 官方 zip 的 SHA-256。上游发新版时
+# 这里必须同步人工更新——宁可下载失败也不要静默装入未校验的二进制。
+# 获取方式: 官方 Release 页校验和文件（mihomo-windows-amd64-v1.19.2.zip 的哈希）。
+MIHOMO_SHA256 = os.environ.get("MIHOMO_SHA256", "").strip().lower() or None
 _UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0.0.0 Safari/537.36"
 
 
@@ -228,9 +233,26 @@ def download_core(dest_dir: str = MIHOMO_DIR, proxy: str | None = None) -> str |
     with requests.get(MIHOMO_DOWNLOAD_URL, timeout=120, stream=True,
                       headers={"User-Agent": _UA}, proxies=proxies) as r:
         r.raise_for_status()
+        digest = hashlib.sha256()
         with open(zip_path, "wb") as f:
             for chunk in r.iter_content(65536):
                 f.write(chunk)
+                digest.update(chunk)
+    if MIHOMO_SHA256:
+        actual = digest.hexdigest()
+        if actual != MIHOMO_SHA256:
+            try:
+                os.remove(zip_path)
+            except OSError:
+                pass
+            raise RuntimeError(
+                "mihomo zip SHA-256 mismatch: expected %s got %s "
+                "(download rejected; set MIHOMO_SHA256 env to override)"
+                % (MIHOMO_SHA256, actual))
+        log.info("mihomo zip SHA-256 verified: %s", actual[:16] + "...")
+    else:
+        log.warning("mihomo zip SHA-256 NOT verified (MIHOMO_SHA256 unset) - "
+                    "supply-chain check skipped")
     with zipfile.ZipFile(zip_path) as z:
         for info in z.infolist():
             if info.filename.endswith(".exe"):

@@ -20845,7 +20845,26 @@ class Handler(BaseHTTPRequestHandler):
                 duck_upstream.init_pool(log=log)
             except Exception as exc:
                 return self._json(200, {"ok": False, "msg": str(exc), "exits": []})
-        return self._json(200, {"ok": True, "exits": duck_upstream.POOL.list_exits()})
+        # 纯协议池是默认通道：面板注册/恢复的出口在它那边，合并展示。
+        try:
+            import duck_pure as _dp
+            if _dp.POOL is None:
+                _dp.init_pool(log=log)
+            pure_names = {e["name"] for e in _dp.POOL.list_exits()}
+            cdp_list = duck_upstream.POOL.list_exits()
+            merged = list(cdp_list)
+            merged += [e for e in _dp.POOL.list_exits() if e["name"] not in
+                       {c["name"] for c in cdp_list}]
+            status = {"ok": True, "exits": merged}
+        except Exception:
+            status = {"ok": True, "exits": duck_upstream.POOL.list_exits()}
+        # x-fe-version 自愈状态（known#4）：面板可见，静默失效变可观测。
+        try:
+            import duck_pure as _dp2
+            status["fe_version"] = _dp2.fe_version_status()
+        except Exception:
+            pass
+        return self._json(200, status)
 
     def _route_duck_exit_upsert(self, payload):
         name = str(payload.get("name") or "").strip()
@@ -20859,6 +20878,15 @@ class Handler(BaseHTTPRequestHandler):
             duck_upstream.POOL.upsert_exit(name, proxy=proxy)
         except Exception as exc:
             return self._json(200, {"ok": False, "msg": str(exc)})
+        # 同步纯协议池（默认通道）并落盘（known#10）。pure 池独立于 CDP 池，
+        # 只注册不 spawn；注册面标记 panel=True 才会写 duck-exits.json。
+        try:
+            import duck_pure as _dp
+            if _dp.POOL is None:
+                _dp.init_pool(log=log)
+            _dp.POOL.register_exit(name, proxy=proxy, panel=True)
+        except Exception as exc:
+            log("duck pure exit sync failed: %s" % exc)
         log("duck exit upserted: %s proxy=%s" % (name, proxy or "-"))
         return self._json(200, {"ok": True, "msg": "exit %s ready (proxy=%s)" % (name, proxy or "direct")})
 
@@ -20868,6 +20896,12 @@ class Handler(BaseHTTPRequestHandler):
             return self._error(400, "name required", "invalid_request_error")
         if duck_upstream.POOL is not None:
             duck_upstream.POOL.remove_exit(name)
+        try:
+            import duck_pure as _dp
+            if _dp.POOL is not None:
+                _dp.POOL.remove_exit(name)   # 含持久化删除
+        except Exception as exc:
+            log("duck pure exit remove failed: %s" % exc)
         log("duck exit removed: %s" % name)
         return self._json(200, {"ok": True})
     def _route_accounts_product(self, payload):
@@ -23201,6 +23235,8 @@ def _bootstrap_runtime(args):
     SYSTEM_PROMPT = args.system_prompt
     if args.accounts_dir:
         ACCOUNTS_DIR = os.path.abspath(args.accounts_dir)
+    # 面板注册出口的持久化文件（known#10）：放 ACCOUNTS_DIR，重启自动恢复。
+    os.environ["DUCK_EXITS_PERSIST"] = os.path.join(ACCOUNTS_DIR, "duck-exits.json")
     # 日志落库（默认关闭）：在账号池之前初始化，好让「池加载失败」这类最需要
     # 事后留档的启动日志也能进库。关闭时这里只造一个 enabled=False 的空壳，
     # 不建文件、不改日志路径。

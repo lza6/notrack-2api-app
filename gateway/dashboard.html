@@ -14518,16 +14518,21 @@ async function duckReloadExits(){
     if(sum){
       const alive=list.filter(e=>e.alive).length;
       const proxies=list.filter(e=>e.proxy).length;
+      const scored = list.filter(e => e.score != null);
+      const avg = scored.length ? Math.round(scored.reduce((s, e) => s + e.score, 0) / scored.length) : null;
       sum.innerHTML = '共 ' + list.length + ' 个出口 · <span style="color:var(--accent2)">' + alive + ' 就绪</span> · ' + proxies + ' 个绑定代理' +
+        (avg != null ? ' · 平均质量分 <b>' + avg + '</b>' : '') +
         (list.length ? '<br>' + list.map(e=>esc(e.name)+'（'+(e.proxy?'代理':'直连')+'，'+(e.busy?'忙碌':(e.alive?'就绪':'未启动'))+'）').join(' · ') : '');
     }
     const el = document.getElementById('duckExitList');
     if(!list.length){ el.innerHTML = '<div style="color:var(--dim)">暂无出口。添加第一个出口（无代理即可直连；IP 被风控时换住宅代理）。</div>'; return; }
     el.innerHTML = '<table class="data-table" style="width:100%;border-collapse:collapse;font-size:12px">' +
-      '<tr style="color:var(--dim);text-align:left"><th>出口名</th><th>代理</th><th>状态</th><th>最近成功</th><th>最近错误</th><th></th></tr>' +
+      '<tr style="color:var(--dim);text-align:left"><th>出口名</th><th>代理</th><th>质量分</th><th>状态</th><th>最近成功</th><th>最近错误</th><th></th></tr>' +
       list.map(e => '<tr>' +
         '<td>' + esc(e.name) + '</td>' +
         '<td>' + esc(e.proxy || '直连') + '</td>' +
+        '<td>' + (e.score == null ? '<span style="color:var(--dim)">—</span>'
+          : '<span style="color:' + (e.score >= 70 ? 'var(--accent2)' : e.score >= 40 ? 'var(--warn)' : 'var(--bad)') + ';font-weight:600">' + e.score + '</span>') + '</td>' +
         '<td>' + (e.busy ? '忙碌' : (e.alive ? '<span style="color:var(--accent2)">就绪</span>' : '<span style="color:var(--bad)">未启动</span>')) + '</td>' +
         '<td>' + (e.last_ok ? new Date(e.last_ok*1000).toLocaleTimeString() : '—') + '</td>' +
         '<td style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(e.last_err||'') + '">' + esc((e.last_err||'—').slice(0,60)) + '</td>' +

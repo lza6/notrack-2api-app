@@ -5,8 +5,8 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder --win portable",
-    "pack": "electron-builder --win --dir"
+    "dist": "powershell -ExecutionPolicy Bypass -File pre-dist.ps1 && electron-builder --win portable",
+    "pack": "powershell -ExecutionPolicy Bypass -File pre-dist.ps1 && electron-builder --win --dir"
   },
   "keywords": [],
   "author": "",

@@ -20,6 +20,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import re
 import queue
 import subprocess
 import threading
@@ -37,6 +38,83 @@ _CHAT_URL = 'https://duck.ai/duckchat/v1/chat'
 _FE_VERSION_PREFIX = 'serp_20261027_103404_ET-bfbdb13e3759d1fae557b46cb8f446ef5962b787'
 
 _DIR = os.path.dirname(os.path.abspath(__file__))
+
+# ── x-fe-version 漂移自愈（known#4，方案D）────────────────────────────────
+# duck.ai 前端发版后旧版本串会被 418 拒绝且 shim 无法救——唯一出路是从
+# duck.ai 首页抓最新的 serp_* 串。这里做成「失效才抓、抓到即热更」：
+# 进程内存热更新 + 落盘缓存（下次启动直接用新值，不用再等一次失败）。
+_FE_VERSION_LOCK = threading.Lock()
+_FE_VERSION_STATE = {"value": _FE_VERSION_PREFIX, "refreshed_at": 0.0,
+                     "last_error": "", "source": "builtin"}
+_FE_VERSION_CACHE = os.path.join(_DIR, ".fe-version-cache.json")
+_FE_VERSION_MIN_INTERVAL = 600.0   # 自愈抓取最小间隔（秒），防抖
+
+
+def current_fe_version() -> str:
+    with _FE_VERSION_LOCK:
+        return _FE_VERSION_STATE["value"]
+
+
+def fe_version_status() -> dict:
+    with _FE_VERSION_LOCK:
+        return dict(_FE_VERSION_STATE)
+
+
+def refresh_fe_version(session=None, force: bool = False, log=None) -> bool:
+    """从 duck.ai 首页抓最新 serp_* 版本串并热更。成功返回 True。
+
+    - 有缓存文件且未过期（force=False 时受最小间隔约束）优先用缓存；
+    - 抓取失败静默保留旧值（调用方的 418 重试逻辑不受影响）。
+    """
+    now = time.time()
+    with _FE_VERSION_LOCK:
+        if not force and now - _FE_VERSION_STATE["refreshed_at"] < _FE_VERSION_MIN_INTERVAL:
+            return False
+    try:
+        s = session or creq.Session(impersonate=IMPERSONATE, timeout=20)
+        r = s.get("https://duck.ai/", headers={"User-Agent": UA})
+        if r.status_code != 200:
+            raise RuntimeError("status %s" % r.status_code)
+        m = re.search(r'serp_\d{8}_\d{6}_[A-Za-z0-9_-]{20,}', r.text)
+        if not m:
+            raise RuntimeError("no serp_* token in homepage")
+        fresh = m.group(0)
+        if fresh == current_fe_version():
+            with _FE_VERSION_LOCK:
+                _FE_VERSION_STATE.update({"refreshed_at": now, "last_error": "",
+                                          "source": "confirmed"})
+            return False   # 没变，但确认了当前值仍有效
+        with _FE_VERSION_LOCK:
+            _FE_VERSION_STATE.update({"value": fresh, "refreshed_at": now,
+                                      "last_error": "", "source": "self-healed"})
+        try:
+            with open(_FE_VERSION_CACHE, "w", encoding="utf-8") as fh:
+                json.dump({"value": fresh, "at": now}, fh)
+        except OSError:
+            pass
+        if log:
+            log("x-fe-version self-healed: %s" % fresh[:40] + "...")
+        return True
+    except Exception as exc:
+        with _FE_VERSION_LOCK:
+            _FE_VERSION_STATE.update({"refreshed_at": now, "last_error": str(exc)[:200]})
+        return False
+
+
+def _load_fe_version_cache():
+    """启动时若有比内置值新的缓存则采用（duck 发版后的第二次启动不再先失败一次）。"""
+    try:
+        with open(_FE_VERSION_CACHE, encoding="utf-8") as fh:
+            data = json.load(fh)
+        v = str(data.get("value") or "")
+        at = float(data.get("at") or 0)
+        if v.startswith("serp_") and at > _FE_VERSION_STATE["refreshed_at"]:
+            _FE_VERSION_STATE.update({"value": v, "refreshed_at": at, "source": "cache"})
+    except (OSError, ValueError):
+        pass
+
+
+_load_fe_version_cache()
 
 # duck 模型清单（与 duck_client.DUCK_MODEL_IDS 对齐）
 DUCK_MODEL_IDS = ['gpt-6-luna', 'gpt-5.4-mini', 'claude-haiku-4-5',
@@ -273,7 +351,7 @@ def chat_stream_via_session(session, model, messages, exit_proxy=None):
                 'x-duckai-continuation': 'resubmit-context',
                 'x-duckai-response-id': str(uuid.uuid4()),
                 'x-duckai-tool-approval': 'web-search',
-                'x-fe-version': _FE_VERSION_PREFIX + '-dev'[:64],
+                'x-fe-version': current_fe_version() + '-dev'[:64],
                 'x-fe-signals': _fe_signals(),
                 'Referer': 'https://duck.ai/',
                 'Origin': 'https://duck.ai',
@@ -299,6 +377,26 @@ def chat_stream_via_session(session, model, messages, exit_proxy=None):
                 vqd = _node_answer(base64.b64decode(vqd64).decode('utf-8'))
                 headers['x-vqd-hash-1'] = vqd
             if r2 is None or r2.status_code != 200:
+                # 重试耗尽仍是挑战失败 → 可能 x-fe-version 已随 duck 发版漂移，
+                # 触发自愈抓取（有最小间隔防抖），抓到新值则换头最后再试一轮。
+                if r2 is not None and 'ERR_CHALLENGE' in r2.text:
+                    if refresh_fe_version(session=session):
+                        headers['x-fe-version'] = current_fe_version() + '-dev'[:64]
+                        r1 = session.get(_STATUS_URL,
+                                         headers={'Cache-Control': 'no-store',
+                                                  'x-vqd-accept': '1',
+                                                  'Referer': 'https://duck.ai/'})
+                        vqd64 = r1.headers.get('x-vqd-hash-1') or ''
+                        if vqd64:
+                            headers['x-vqd-hash-1'] = _node_answer(
+                                base64.b64decode(vqd64).decode('utf-8'))
+                        r2 = session.post(_CHAT_URL, json=body, headers=headers)
+                        if r2.status_code == 200:
+                            for line in r2.text.splitlines():
+                                line = line.strip()
+                                if line.startswith('data: '):
+                                    on_frame(line[6:])
+                            return
                 raise RuntimeError('chat %s: %s' % (getattr(r2, 'status_code', '?'),
                                                     getattr(r2, 'text', '')[:200]))
             for line in r2.text.split('\n'):
@@ -325,6 +423,11 @@ class PureDuckPool:
     但不 spawn Chrome。来源：DUCK_EXITS 环境变量 / 面板 / proxy_pool_ext。
     """
 
+    #: 面板注册出口的持久化文件（known#10：重启丢配置 → 落盘恢复）。
+    #: None = 不持久化（测试/环境变量来源场景）；只记「面板 upsert 过」的出口，
+    #: 环境变量/代理文件来源的重启后由各自来源恢复，不重复落盘。
+    PERSIST_PATH: str | None = None
+
     def __init__(self, log=None, headless=True, base_port=9400):
         self.log = log or (lambda m: None)
         self._exits: dict[str, dict] = {}
@@ -332,6 +435,54 @@ class PureDuckPool:
         self._lock = threading.RLock()
         self._cond = threading.Condition(self._lock)
         self._rr = 0
+        self._panel_registered: set[str] = set()   # 面板 upsert 过的名字（持久化范围）
+
+    # -- 持久化（仅面板注册面；环境变量来源重启后自然恢复，不落盘）--
+    @classmethod
+    def set_persist_path(cls, path: str | None):
+        cls.PERSIST_PATH = path
+
+    def _persist(self):
+        """把面板注册的出口写盘（原子写）。PERSIST_PATH 为 None 时跳过。"""
+        path = self.PERSIST_PATH
+        if not path:
+            return
+        try:
+            with self._lock:
+                data = {n: self._registered.get(n)
+                        for n in sorted(self._panel_registered)
+                        if n in self._registered}
+            os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+            tmp = path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as fh:
+                json.dump(data, fh, ensure_ascii=False, indent=2)
+            os.replace(tmp, path)
+        except OSError as exc:
+            self.log("exit persist failed %s: %s" % (path, exc))
+
+    def load_persisted(self) -> int:
+        """启动时恢复面板注册过的出口。返回恢复数量。"""
+        path = self.PERSIST_PATH
+        if not path:
+            return 0
+        try:
+            with open(path, encoding="utf-8") as fh:
+                data = json.load(fh)
+        except (OSError, ValueError):
+            return 0
+        if not isinstance(data, dict):
+            return 0
+        n = 0
+        for name, proxy in data.items():
+            name = str(name).strip()
+            if not name:
+                continue
+            self._registered[name] = (str(proxy).strip() or None) if proxy else None
+            self._panel_registered.add(name)
+            n += 1
+        if n:
+            self.log("exits restored from %s: %d" % (path, n))
+        return n
 
     # -- 出口管理（面板可调用）--
     def list_exits(self):
@@ -341,15 +492,27 @@ class PureDuckPool:
         except Exception:
             scores = {}
         with self._lock:
-            return [{'name': n, 'proxy': e['proxy'], 'busy': e['busy'],
-                     'last_ok': e['last_ok'], 'last_err': e['last_err'],
-                     'score': scores.get(n),
-                     'alive': True}
-                    for n, e in self._exits.items()]
+            # 已 spawn 的出口带完整状态；仅注册未 spawn 的（懒加载）也列出，
+            # 否则面板看不到恢复/注册了但还没用过的出口。
+            spawned = {e['name']: {'name': n, 'proxy': e['proxy'], 'busy': e['busy'],
+                                   'last_ok': e['last_ok'], 'last_err': e['last_err'],
+                                   'score': scores.get(n), 'alive': True}
+                       for n, e in self._exits.items()}
+            out = list(spawned.values())
+            for rname, rproxy in self._registered.items():
+                if rname not in spawned:
+                    out.append({'name': rname, 'proxy': rproxy, 'busy': False,
+                                'last_ok': 0.0, 'last_err': '',
+                                'score': scores.get(rname), 'alive': False})
+            return out
 
-    def register_exit(self, name, proxy=None):
+    def register_exit(self, name, proxy=None, panel=False):
         with self._lock:
             self._registered[name] = proxy
+            if panel:
+                self._panel_registered.add(name)
+        if panel:
+            self._persist()
 
     def upsert_exit(self, name, proxy=None):
         with self._lock:
@@ -357,11 +520,15 @@ class PureDuckPool:
             if e and e['proxy'] == proxy:
                 return
             self._registered[name] = proxy
+            self._panel_registered.add(name)
+        self._persist()
 
     def remove_exit(self, name):
         with self._lock:
             self._exits.pop(name, None)
             self._registered.pop(name, None)
+            self._panel_registered.discard(name)
+        self._persist()
 
     def _pick(self, preferred=None):
         with self._cond:
@@ -421,7 +588,7 @@ class PureDuckPool:
                 'x-duckai-continuation': 'resubmit-context',
                 'x-duckai-response-id': str(uuid.uuid4()),
                 'x-duckai-tool-approval': 'web-search',
-                'x-fe-version': _FE_VERSION_PREFIX + '-dev'[:64],
+                'x-fe-version': current_fe_version() + '-dev'[:64],
                 'x-fe-signals': _fe_signals(),
                 'Referer': 'https://duck.ai/',
                 'Origin': 'https://duck.ai',
@@ -484,6 +651,12 @@ def init_pool(log=None, headless=None):
     if POOL is not None:
         return POOL
     POOL = PureDuckPool(log=log)
+    # 面板注册出口持久化（known#10）：文件放 accounts/ 同级目录。
+    # 注意 ACCOUNTS_DIR 由 wb_proxy 决定，这里从环境变量取，取不到则不持久化。
+    persist = os.environ.get("DUCK_EXITS_PERSIST", "").strip()
+    if persist:
+        PureDuckPool.set_persist_path(persist)
+        POOL.load_persisted()
     # 出口来源：DUCK_EXITS 环境变量（与 CDP 通道同格式）+ 直连代理文件
     spec = os.environ.get("DUCK_EXITS", "").strip()
     n = 0
@@ -569,7 +742,7 @@ def duck_chat_stream(model, messages, on_chunk_error=None):
                     'x-duckai-continuation': 'resubmit-context',
                     'x-duckai-response-id': str(uuid.uuid4()),
                     'x-duckai-tool-approval': 'web-search',
-                    'x-fe-version': _FE_VERSION_PREFIX + '-dev'[:64],
+                    'x-fe-version': current_fe_version() + '-dev'[:64],
                     'x-fe-signals': _fe_signals(),
                     'Referer': 'https://duck.ai/',
                     'Origin': 'https://duck.ai',
