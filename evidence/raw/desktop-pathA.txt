@@ -4,3 +4,7 @@ chat: {"error": {"message": "upstream error: chat 418: {\"action\":\"error\",\"s
 chat1: OK: ok
 chat2: OK: ok
 chat3: OK: ok
+=== /agents 降级验证 2026-10-28T19:23:53+08:00 ===
+/agents: {"enabled": false, "reason": "wb_agents module is not bundled in this build: No module named 'wb_agents'"}
+/agents/available: {"enabled": true}
+/health: 200

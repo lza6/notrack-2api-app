@@ -2766,7 +2766,12 @@ class Account(object):
             return {"ok": False, "error": "API key accounts have no activity programme"}
         if self.is_enterprise():
             return {"ok": False, "error": "enterprise accounts do not support activity report"}
-        import wb_tasks
+        try:
+            import wb_tasks
+        except ImportError:
+            # 精简发行版不含 wb_tasks：活跃上报是可选能力，缺模块时明确跳过，
+            # 不要让 ModuleNotFoundError 冒出去把这个调用点打成 500。
+            return {"ok": False, "error": "活跃上报不可用：当前发行版未包含 wb_tasks"}
         event = wb_tasks.build_event(self, "chat")
         base = None if self.realm == "cn" else self.chat_base_url()
         if not wb_tasks.report_events(self, [event], base=base):

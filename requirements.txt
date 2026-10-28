@@ -4,6 +4,10 @@
 requests>=2.31
 curl_cffi>=0.7
 cryptography>=42.0
+# 订阅/mihomo 配置解析（gateway/mihomo_runner.py:45,378）
+PyYAML>=6.0
+# Chrome CDP 通道（gateway/duck_client.py:152，DUCK_PURE=0 时使用）
+websocket-client>=1.7
 
 # Dev / test only (not needed at runtime)
 pytest>=8.0

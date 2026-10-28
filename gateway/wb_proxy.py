@@ -129,11 +129,31 @@ _AGENTS_MODULE = None
 _SERVER_DEPLOYMENT = None
 
 
+def agents_available():
+    """wb_agents 是否随包提供（廉价判定，供路由层提前短路）。"""
+    try:
+        return agents_module() is not None
+    except AgentsUnavailable:
+        return False
+
+
+class AgentsUnavailable(RuntimeError):
+    """wb_agents 未随包提供（精简发行版）：一键配置不可用，要能说清原因。"""
+
+
 def agents_module():
-    """按需 import wb_agents；用不到它的部署连模块都不载入。"""
+    """按需 import wb_agents；用不到它的部署连模块都不载入。
+
+    精简发行版不含 wb_agents，此时抛 AgentsUnavailable 让上层回一句人话；
+    直接 `import` 会让 ModuleNotFoundError 冒到 500，用户只看到空白错误。
+    """
     global _AGENTS_MODULE
     if _AGENTS_MODULE is None:
-        import wb_agents
+        try:
+            import wb_agents
+        except ImportError as exc:
+            raise AgentsUnavailable(
+                "wb_agents module is not bundled in this build: %s" % exc)
         _AGENTS_MODULE = wb_agents
     return _AGENTS_MODULE
 
@@ -18930,7 +18950,12 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/settings/reveal":
             return self._get_settings_reveal(query)
         if path == "/agents":
-            return self._get_agents()
+            try:
+                return self._get_agents()
+            except AgentsUnavailable as exc:
+                # 精简发行版不含 wb_agents：面板要看到"不可用 + 原因"，
+                # 而不是一个空白的 500。
+                return self._json(200, {"enabled": False, "reason": str(exc)})
         if path == "/agents/model-selection":
             return self._get_agents_model_selection()
         if path == "/agents/available":
@@ -20423,7 +20448,13 @@ class Handler(BaseHTTPRequestHandler):
     # ---- one-click agent integration (wb_agents) ----
 
     def _agents_client_allowed(self):
-        """本请求的来源地址能不能用一键配置（判定见模块级 agents_client_allowed）。"""
+        """本请求的来源地址能不能用一键配置（判定见模块级 agents_client_allowed）。
+
+        两个条件都要满足：来源是本机（远程看板改了网关机器的配置没有意义），
+        且本发行版真的带 wb_agents——否则面板会显示一个点进去必然失败的入口。
+        """
+        if not agents_available():
+            return False
         return agents_client_allowed(getattr(self, "client_address", None))
 
     def _agents_base_url_hint(self):
@@ -20550,6 +20581,13 @@ class Handler(BaseHTTPRequestHandler):
         return
 
     def _get_agents(self):
+        # 两个不可用原因要分开说：模块没打包 vs 远程看板。混成一句会让排障
+        # 的人以为是网络/来源问题，其实只是这个发行版没带 wb_agents。
+        if not agents_available():
+            return self._json(200, {
+                "enabled": False,
+                "reason": "wb_agents module is not bundled in this build",
+            })
         if not self._agents_client_allowed():
             # 远程看板（服务端 / Docker / OpenWrt）：一键配置改的是网关所在
             # 机器的配置目录，到不了用户自己的电脑，直接按不可用返回。
@@ -22462,6 +22500,10 @@ class Handler(BaseHTTPRequestHandler):
             payload = self._payload_or_error()
             if payload is None:
                 return
+            if not agents_available():
+                return self._json(200, {
+                    "ok": False,
+                    "msg": "wb_agents module is not bundled in this build"})
             # 勾选清单只是数据、不碰本机配置目录，所以远程看板也能保存；
             # apply / restore 改的是网关所在机器的配置文件，只允许本机操作。
             if path == "/agents/model-selection":
